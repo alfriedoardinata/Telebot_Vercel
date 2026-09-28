@@ -14,8 +14,75 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
 
 // 1. Menu Utama (/start)
+// ==================== FITUR BROADCAST ADMIN ====================
+bot.command("broadcast", async (ctx) => {
+  // Hanya admin yang diizinkan menggunakan perintah ini
+  if (ctx.from?.id !== adminId) {
+    return ctx.reply("❌ Perintah ini khusus untuk Admin.");
+  }
+
+  // Mengambil isi pesan setelah kata /broadcast
+  const pesanBroadcast = ctx.match?.trim();
+
+  if (!pesanBroadcast) {
+    return ctx.reply(
+      "❌ Format salah!\n\n" +
+      "Gunakan format:\n" +
+      "`/broadcast <isi pesan>`\n\n" +
+      "Contoh:\n" +
+      "`/broadcast 📢 Halo semuanya! Stok slot sudah restock 100 slot. Silakan order!`",
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  await ctx.reply("⏳ Sedang mengirim broadcast ke seluruh pelanggan...");
+
+  // Ambil semua daftar ID pengguna dari database
+  const { data: userList, error } = await supabase.from("users").select("user_id");
+
+  if (error || !userList || userList.length === 0) {
+    return ctx.reply("❌ Belum ada daftar pengguna di database.");
+  }
+
+  let sukses = 0;
+  let gagal = 0;
+
+  // Kirim ke tiap-tiap pengguna satu per satu
+  for (const user of userList) {
+    try {
+      await ctx.api.sendMessage(user.user_id, pesanBroadcast, {
+        parse_mode: "Markdown",
+      });
+      sukses++;
+    } catch (err) {
+      // Jika user memblokir bot, lewati tanpa membuat server error
+      gagal++;
+    }
+  }
+
+  // Laporan ke Admin setelah selesai
+  await ctx.reply(
+    `📢 *LAPORAN BROADCAST SELESAI*\n\n` +
+    `✅ Berhasil terkirim: *${sukses} orang*\n` +
+    `❌ Gagal / Diblokir: *${gagal} orang*`,
+    { parse_mode: "Markdown" }
+  );
+});
+// ===============================================================
 bot.command("start", async (ctx) => {
+  const userId = ctx.from?.id;
   const userName = ctx.from?.first_name || "Pelanggan";
+  const username = ctx.from?.username ? `@${ctx.from.username}` : "-";
+
+  // Simpan/Update pengguna ke database Supabase
+  if (userId) {
+    await supabase.from("users").upsert({
+      user_id: userId,
+      username: username,
+      first_name: userName,
+    });
+  }
+
   const keyboard = new InlineKeyboard()
     .text("🛒 Beli Slot", "menu_beli").row()
     .text("👤 Profil Saya", "menu_profil")
