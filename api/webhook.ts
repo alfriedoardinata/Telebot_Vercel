@@ -1,44 +1,261 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import type { TelegramUpdate } from "./_lib/types.js";
-import { sendMessage } from "./_lib/telegram.js";
-import { handleMessage } from "./_handlers/message.js";
+import { Bot, InlineKeyboard, webhookCallback } from "grammy";
+import { createClient } from "@supabase/supabase-js";
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse
-) {
-  // GET / → landing page
-  if (req.method === "GET") {
-    // Kalau request ke /api/webhook langsung, balas JSON
-    if (req.url?.startsWith("/api/")) {
-      return res.status(200).send("Bot is alive 🚀");
+// Inisialisasi Environment Variables
+const botToken = process.env.BOT_TOKEN || "";
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseKey = process.env.SUPABASE_KEY || "";
+const adminId = Number(process.env.ADMIN_ID || "0");
+
+const bot = new Bot(botToken);
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Gambar placeholder QRIS (bisa diganti URL link gambar QRIS asli Anda)
+const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
+
+// 1. Menu Utama (/start)
+bot.command("start", async (ctx) => {
+  const userName = ctx.from?.first_name || "Pelanggan";
+  const keyboard = new InlineKeyboard()
+    .text("🛒 Beli Slot", "menu_beli").row()
+    .text("👤 Profil Saya", "menu_profil")
+    .text("📜 Riwayat Pesanan", "menu_history").row()
+    .url("💬 Hubungi Admin", `tg://user?id=${adminId || ctx.from?.id}`);
+
+  await ctx.reply(
+    `👋 Halo *${userName}*!\n\nSelamat datang di Store Bot. Silakan pilih menu di bawah ini:`,
+    { parse_mode: "Markdown", reply_markup: keyboard }
+  );
+});
+
+// 2. Klik Tombol Beli Slot
+bot.callbackQuery("menu_beli", async (ctx) => {
+  const { data: products } = await supabase.from("products").select("*");
+
+  if (!products || products.length === 0) {
+    return ctx.answerCallbackQuery({ text: "Belum ada slot tersedia!", show_alert: true });
+  }
+
+  const keyboard = new InlineKeyboard();
+  products.forEach((p) => {
+    keyboard.text(`${p.name} | Rp ${p.price.toLocaleString("id-ID")} (Stok: ${p.stock})`, `order_${p.id}`).row();
+  });
+  keyboard.text("⬅️ Kembali", "back_to_menu");
+
+  await ctx.editMessageText("📦 *PILIH PAKET / SLOT*\nSilakan tentukan pilihan Anda:", {
+    parse_mode: "Markdown",
+    reply_markup: keyboard,
+  });
+});
+
+// 3. User Memilih Paket/Slot
+bot.callbackQuery(/^order_(\d+)$/, async (ctx) => {
+  const productId = parseInt(ctx.match[1]);
+  const { data: product } = await supabase.from("products").select("*").eq("id", productId).single();
+
+  if (!product || product.stock <= 0) {
+    return ctx.answerCallbackQuery({ text: "Stok habis!", show_alert: true });
+  }
+
+  // Buat transaksi baru di Supabase
+  const { data: trx, error } = await supabase.from("transactions").insert([
+    {
+      user_id: ctx.from.id,
+      username: ctx.from.username ? `@${ctx.from.username}` : "-",
+      user_name: ctx.from.first_name || "User",
+      product_id: product.id,
+      amount: product.price,
+      status: "MENUNGGU_PEMBAYARAN",
+    },
+  ]).select().single();
+
+  if (error || !trx) {
+    return ctx.answerCallbackQuery({ text: "Gagal membuat invoice.", show_alert: true });
+  }
+
+  await ctx.deleteMessage();
+
+  const invoiceText =
+    `🧾 *INVOICE PESANAN #TRX-${trx.id}*\n\n` +
+    `📦 Paket: *${product.name}*\n` +
+    `💰 Nominal: *Rp ${product.price.toLocaleString("id-ID")}*\n\n` +
+    `📌 *Cara Pembayaran:*\n` +
+    `1. Scan QRIS di atas via m-Banking/E-Wallet.\n` +
+    `2. Transfer sesuai nominal tepat.\n` +
+    `3. *Kirim foto/screenshot bukti transfer langsung ke chat bot ini.*`;
+
+  await ctx.replyWithPhoto(QRIS_IMAGE_URL, {
+    caption: invoiceText,
+    parse_mode: "Markdown",
+  });
+});
+
+// 4. Menu Profil Pembeli
+bot.callbackQuery("menu_profil", async (ctx) => {
+  const { count } = await supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", ctx.from.id)
+    .eq("status", "SELESAI");
+
+  const profilText =
+    `👤 *PROFIL PENGGUNA*\n\n` +
+    `• Nama: ${ctx.from.first_name}\n` +
+    `• Telegram ID: \`${ctx.from.id}\`\n` +
+    `• Transaksi Berhasil: *${count || 0}* kali`;
+
+  const keyboard = new InlineKeyboard().text("⬅️ Kembali", "back_to_menu");
+
+  await ctx.editMessageText(profilText, {
+    parse_mode: "Markdown",
+    reply_markup: keyboard,
+  });
+});
+
+// 5. Menu Riwayat Pesanan
+bot.callbackQuery("menu_history", async (ctx) => {
+  const { data: list } = await supabase
+    .from("transactions")
+    .select("*, products(name)")
+    .eq("user_id", ctx.from.id)
+    .order("id", { ascending: false })
+    .limit(5);
+
+  let text = "📜 *5 RIWAYAT PESANAN TERAKHIR*\n\n";
+  if (!list || list.length === 0) {
+    text += "_Belum ada transaksi._";
+  } else {
+    list.forEach((t) => {
+      const statusBadge =
+        t.status === "SELESAI" ? "✅ Berhasil" : (t.status === "DITOLAK" ? "❌ Ditolak" : "⏳ Menunggu Bukti/ACC");
+      text += `• #TRX-${t.id} | ${t.products?.name || "Slot"} | Rp ${t.amount.toLocaleString("id-ID")}\n  Status: ${statusBadge}\n`;
+    });
+  }
+
+  const keyboard = new InlineKeyboard().text("⬅️ Kembali", "back_to_menu");
+
+  await ctx.editMessageText(text, {
+    parse_mode: "Markdown",
+    reply_markup: keyboard,
+  });
+});
+
+// 6. Tombol Kembali ke Menu Utama
+bot.callbackQuery("back_to_menu", async (ctx) => {
+  const keyboard = new InlineKeyboard()
+    .text("🛒 Beli Slot", "menu_beli").row()
+    .text("👤 Profil Saya", "menu_profil")
+    .text("📜 Riwayat Pesanan", "menu_history").row()
+    .url("💬 Hubungi Admin", `tg://user?id=${adminId || ctx.from?.id}`);
+
+  await ctx.editMessageText(`👋 Halo *${ctx.from.first_name}*!\n\nSilakan pilih menu di bawah ini:`, {
+    parse_mode: "Markdown",
+    reply_markup: keyboard,
+  });
+});
+
+// 7. Menerima Foto Bukti Transfer dari Pembeli
+bot.on("message:photo", async (ctx) => {
+  const userId = ctx.from.id;
+
+  // Cek pesanan aktif yang menunggu pembayaran
+  const { data: trx } = await supabase
+    .from("transactions")
+    .select("*, products(name)")
+    .eq("user_id", userId)
+    .eq("status", "MENUNGGU_PEMBAYARAN")
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!trx) {
+    return ctx.reply("❌ Tidak ditemukan pesanan aktif yang menunggu bukti pembayaran.");
+  }
+
+  const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+
+  // Ubah status jadi MENUNGGU_ACC
+  await supabase
+    .from("transactions")
+    .update({ status: "MENUNGGU_ACC", payment_proof_file_id: photoId })
+    .eq("id", trx.id);
+
+  await ctx.reply(`✅ Bukti transfer untuk pesanan *#TRX-${trx.id}* sudah diterima.\nMohon tunggu admin memverifikasi pesanan Anda.`, {
+    parse_mode: "Markdown",
+  });
+
+  // Notifikasi ke Admin beserta tombol ACC / Tolak
+  if (adminId) {
+    const adminKeyboard = new InlineKeyboard()
+      .text("✅ Terima (ACC)", `acc_${trx.id}`)
+      .text("❌ Tolak", `reject_${trx.id}`);
+
+    const caption =
+      `🚨 *PESANAN MASUK BARU* 🚨\n\n` +
+      `🆔 Trx: #TRX-${trx.id}\n` +
+      `👤 Pembeli: ${ctx.from.first_name} (\`${userId}\`)\n` +
+      `📦 Item: ${trx.products?.name || "Slot"}\n` +
+      `💰 Nominal: Rp ${trx.amount.toLocaleString("id-ID")}\n\n` +
+      `Verifikasi bukti transfer di atas:`;
+
+    await ctx.api.sendPhoto(adminId, photoId, {
+      caption,
+      parse_mode: "Markdown",
+      reply_markup: adminKeyboard,
+    });
+  }
+});
+
+// 8. Admin Menyetujui (ACC) Pesanan
+bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
+  const trxId = parseInt(ctx.match[1]);
+  const { data: trx } = await supabase.from("transactions").select("*, products(*)").eq("id", trxId).single();
+
+  if (trx && trx.status !== "SELESAI") {
+    await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
+
+    // Kurangi stok jika tersedia
+    if (trx.products && trx.products.stock > 0) {
+      await supabase.from("products").update({ stock: trx.products.stock - 1 }).eq("id", trx.product_id);
     }
-    // Selain itu, redirect ke landing page
-    return res.redirect(307, "/index.html");
+
+    // Beritahu pembeli
+    await ctx.api.sendMessage(
+      trx.user_id,
+      `🎉 *PEMBAYARAN DITERIMA!*\nPesanan *#TRX-${trx.id}* telah diverifikasi dan disetujui.\nTerima kasih atas pesanan Anda!`,
+      { parse_mode: "Markdown" }
+    );
+
+    await ctx.editMessageCaption({
+      caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*\nStok produk otomatis dikurangi.`,
+      parse_mode: "Markdown",
+    });
   }
+  await ctx.answerCallbackQuery({ text: "Pesanan disetujui." });
+});
 
-  // Hanya POST untuk webhook
-  if (req.method !== "POST") {
-    return res.status(405).send("Method Not Allowed");
+// 9. Admin Menolak Pesanan
+bot.callbackQuery(/^reject_(\d+)$/, async (ctx) => {
+  const trxId = parseInt(ctx.match[1]);
+  const { data: trx } = await supabase.from("transactions").select("*").eq("id", trxId).single();
+
+  if (trx) {
+    await supabase.from("transactions").update({ status: "DITOLAK" }).eq("id", trxId);
+
+    // Beritahu pembeli
+    await ctx.api.sendMessage(
+      trx.user_id,
+      `❌ *PEMBAYARAN DITOLAK*\nBukti pembayaran pesanan *#TRX-${trx.id}* tidak sesuai atau belum masuk. Hubungi admin untuk bantuan.`,
+      { parse_mode: "Markdown" }
+    );
+
+    await ctx.editMessageCaption({
+      caption: `❌ *PESANAN #TRX-${trx.id} TELAH DITOLAK*`,
+      parse_mode: "Markdown",
+    });
   }
+  await ctx.answerCallbackQuery({ text: "Pesanan ditolak." });
+});
 
-  // Verifikasi secret token dari Telegram
-  const secret = req.headers["x-telegram-bot-api-secret-token"];
-  if (secret !== process.env.WEBHOOK_SECRET) {
-    return res.status(401).send("Unauthorized");
-  }
-
-  const update = req.body as TelegramUpdate;
-  const msg = update.message;
-
-  if (msg?.text) {
-    const reply = await handleMessage(msg);
-    if (reply) {
-      await sendMessage(process.env.BOT_TOKEN!, msg.chat.id, reply, {
-        parse_mode: "Markdown",
-      });
-    }
-  }
-
-  res.status(200).send("OK");
-}
+// Ekspor handler webhook untuk Vercel
+export default webhookCallback(bot, "http");
