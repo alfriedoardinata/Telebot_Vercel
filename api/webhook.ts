@@ -23,48 +23,68 @@ bot.command("start", async (ctx) => {
     .url("💬 Hubungi Admin", `tg://user?id=${adminId || ctx.from?.id}`);
 
   await ctx.reply(
-    `👋 Halo *${userName}*!\n\nSelamat datang di Store Bot. Silakan pilih menu di bawah ini:`,
+    `👋 Halo *${userName}*!\n\nSelamat datang di Toko Tumbal Bot. Silakan pilih menu di bawah ini:`,
     { parse_mode: "Markdown", reply_markup: keyboard }
   );
 });
 
-// 2. Klik Tombol Beli Slot
+// 2. Klik Tombol Beli Slot -> Menampilkan Info Harga & Pilihan Jumlah Slot
 bot.callbackQuery("menu_beli", async (ctx) => {
-  const { data: products } = await supabase.from("products").select("*");
+  // Mengambil data harga per slot dari Supabase
+  const { data: product } = await supabase.from("products").select("*").limit(1).maybeSingle();
 
-  if (!products || products.length === 0) {
-    return ctx.answerCallbackQuery({ text: "Belum ada slot tersedia!", show_alert: true });
+  if (!product || product.stock <= 0) {
+    return ctx.answerCallbackQuery({ text: "Maaf, stok slot sedang habis!", show_alert: true });
   }
 
+  const hargaPerSlot = product.price;
+  const stok = product.stock;
+
+  // Daftar opsi jumlah slot yang bisa dibeli
+  const opsiJumlah = [1, 2, 3, 5, 10];
+
   const keyboard = new InlineKeyboard();
-  products.forEach((p) => {
-    keyboard.text(`${p.name} | Rp ${p.price.toLocaleString("id-ID")} (Stok: ${p.stock})`, `order_${p.id}`).row();
+  opsiJumlah.forEach((jumlah) => {
+    if (jumlah <= stok) {
+      const totalHarga = jumlah * hargaPerSlot;
+      keyboard.text(`🔹 ${jumlah} Slot - Rp ${totalHarga.toLocaleString("id-ID")}`, `beli_${product.id}_${jumlah}`).row();
+    }
   });
   keyboard.text("⬅️ Kembali", "back_to_menu");
 
-  await ctx.editMessageText("📦 *PILIH PAKET / SLOT*\nSilakan tentukan pilihan Anda:", {
+  const pesanBeli = 
+    `🛒 *BELI SLOT*\n\n` +
+    `💵 *Harga per Slot:* Rp ${hargaPerSlot.toLocaleString("id-ID")}\n` +
+    `📦 *Sisa Stok:* ${stok} slot\n\n` +
+    `Silakan pilih mau beli berapa slot di bawah ini:`;
+
+  await ctx.editMessageText(pesanBeli, {
     parse_mode: "Markdown",
     reply_markup: keyboard,
   });
 });
 
-// 3. User Memilih Paket/Slot
-bot.callbackQuery(/^order_(\d+)$/, async (ctx) => {
+// 3. User Memilih Jumlah Slot -> Buat Invoice & Kirim QRIS
+bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   const productId = parseInt(ctx.match[1]);
+  const jumlahBeli = parseInt(ctx.match[2]);
+
   const { data: product } = await supabase.from("products").select("*").eq("id", productId).single();
 
-  if (!product || product.stock <= 0) {
-    return ctx.answerCallbackQuery({ text: "Stok habis!", show_alert: true });
+  if (!product || product.stock < jumlahBeli) {
+    return ctx.answerCallbackQuery({ text: "Maaf, stok tidak mencukupi!", show_alert: true });
   }
 
-  // Buat transaksi baru di Supabase
+  const totalTagihan = product.price * jumlahBeli;
+
+  // Catat transaksi di Supabase
   const { data: trx, error } = await supabase.from("transactions").insert([
     {
       user_id: ctx.from.id,
       username: ctx.from.username ? `@${ctx.from.username}` : "-",
       user_name: ctx.from.first_name || "User",
       product_id: product.id,
-      amount: product.price,
+      amount: totalTagihan,
       status: "MENUNGGU_PEMBAYARAN",
     },
   ]).select().single();
@@ -76,13 +96,14 @@ bot.callbackQuery(/^order_(\d+)$/, async (ctx) => {
   await ctx.deleteMessage();
 
   const invoiceText =
-    `🧾 *INVOICE PESANAN #TRX-${trx.id}*\n\n` +
-    `📦 Paket: *${product.name}*\n` +
-    `💰 Nominal: *Rp ${product.price.toLocaleString("id-ID")}*\n\n` +
-    `📌 *Cara Pembayaran:*\n` +
-    `1. Scan QRIS di atas via m-Banking/E-Wallet.\n` +
-    `2. Transfer sesuai nominal tepat.\n` +
-    `3. *Kirim foto/screenshot bukti transfer langsung ke chat bot ini.*`;
+    `🧾 *INVOICE PEMBAYARAN #TRX-${trx.id}*\n\n` +
+    `📦 Pembelian: *${jumlahBeli} Slot*\n` +
+    `💵 Harga Satuan: Rp ${product.price.toLocaleString("id-ID")}\n` +
+    `💰 *Total Tagihan: Rp ${totalTagihan.toLocaleString("id-ID")}*\n\n` +
+    `📌 *Instruksi Pembayaran:*\n` +
+    `1. Scan QRIS di atas via m-Banking atau E-Wallet.\n` +
+    `2. Transfer pas sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}*.\n` +
+    `3. *Kirim foto/screenshot bukti transfer langsung ke bot ini.*`;
 
   await ctx.replyWithPhoto(QRIS_IMAGE_URL, {
     caption: invoiceText,
