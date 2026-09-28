@@ -31,40 +31,37 @@ bot.command("start", async (ctx) => {
 // 2. Klik Tombol Beli Slot -> Menampilkan Info Harga & Pilihan Jumlah Slot
 bot.callbackQuery("menu_beli", async (ctx) => {
   try {
-    // Ambil semua data produk tanpa limit strict
     const { data: products, error } = await supabase.from("products").select("*");
 
-    // Jika terjadi error saat koneksi ke Supabase
-    if (error) {
-      console.error("Supabase Error:", error);
-      return ctx.answerCallbackQuery({ 
-        text: `Error Database: ${error.message}`, 
-        show_alert: true 
-      });
+    if (error || !products || products.length === 0) {
+      return ctx.answerCallbackQuery({ text: "Gagal memuat data produk!", show_alert: true });
     }
 
-    // Jika tabel produk benar-benar kosong
-    if (!products || products.length === 0) {
-      return ctx.answerCallbackQuery({ 
-        text: "Tabel produk masih kosong di Supabase!", 
-        show_alert: true 
-      });
-    }
-
-    // Ambil produk pertama (Slot Tumbal)
     const product = products[0];
 
+    // JIKA STOK HABIS (0 atau kurang)
     if (!product || product.stock <= 0) {
-      return ctx.answerCallbackQuery({ 
-        text: `Stok slot tercatat: ${product?.stock ?? 0}. Silakan isi stok di Supabase.`, 
-        show_alert: true 
+      const adminLink = adminId ? `tg://user?id=${adminId}` : "https://t.me";
+
+      const pesanHabis = 
+        `⚠️ *PEMBERITAHUAN*\n\n` +
+        `Maaf, stock slot sedang habis!\n` +
+        `Silakan pantau berkala atau hubungi admin untuk info restock selanjutnya.`;
+
+      const keyboardHabis = new InlineKeyboard()
+        .url("💬 Tanya Restock ke Admin", adminLink).row()
+        .text("⬅️ Kembali ke Menu", "back_to_menu");
+
+      return await ctx.editMessageText(pesanHabis, {
+        parse_mode: "Markdown",
+        reply_markup: keyboardHabis,
       });
     }
 
+    // JIKA STOK MASIH ADA:
     const hargaPerSlot = Number(product.price);
     const stok = Number(product.stock);
 
-    // Daftar opsi kuantitas yang bisa dipilih
     const opsiJumlah = [5, 10, 15, 20, 25];
     const keyboard = new InlineKeyboard();
 
@@ -89,10 +86,6 @@ bot.callbackQuery("menu_beli", async (ctx) => {
     });
   } catch (err: any) {
     console.error("Catch Error:", err);
-    return ctx.answerCallbackQuery({ 
-      text: `Kendala: ${err.message || "Gagal memuat produk"}`, 
-      show_alert: true 
-    });
   }
 });
 
