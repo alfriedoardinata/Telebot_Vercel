@@ -30,38 +30,70 @@ bot.command("start", async (ctx) => {
 
 // 2. Klik Tombol Beli Slot -> Menampilkan Info Harga & Pilihan Jumlah Slot
 bot.callbackQuery("menu_beli", async (ctx) => {
-  // Mengambil data harga per slot dari Supabase
-  const { data: product } = await supabase.from("products").select("*").limit(1).maybeSingle();
+  try {
+    // Ambil semua data produk tanpa limit strict
+    const { data: products, error } = await supabase.from("products").select("*");
 
-  if (!product || product.stock <= 0) {
-    return ctx.answerCallbackQuery({ text: "Maaf, stok slot sedang habis!", show_alert: true });
-  }
-
-  const hargaPerSlot = product.price;
-  const stok = product.stock;
-
-  // Daftar opsi jumlah slot yang bisa dibeli
-  const opsiJumlah = [1, 2, 3, 5, 10];
-
-  const keyboard = new InlineKeyboard();
-  opsiJumlah.forEach((jumlah) => {
-    if (jumlah <= stok) {
-      const totalHarga = jumlah * hargaPerSlot;
-      keyboard.text(`🔹 ${jumlah} Slot - Rp ${totalHarga.toLocaleString("id-ID")}`, `beli_${product.id}_${jumlah}`).row();
+    // Jika terjadi error saat koneksi ke Supabase
+    if (error) {
+      console.error("Supabase Error:", error);
+      return ctx.answerCallbackQuery({ 
+        text: `Error Database: ${error.message}`, 
+        show_alert: true 
+      });
     }
-  });
-  keyboard.text("⬅️ Kembali", "back_to_menu");
 
-  const pesanBeli = 
-    `🛒 *BELI SLOT*\n\n` +
-    `💵 *Harga per Slot:* Rp ${hargaPerSlot.toLocaleString("id-ID")}\n` +
-    `📦 *Sisa Stok:* ${stok} slot\n\n` +
-    `Silakan pilih mau beli berapa slot di bawah ini:`;
+    // Jika tabel produk benar-benar kosong
+    if (!products || products.length === 0) {
+      return ctx.answerCallbackQuery({ 
+        text: "Tabel produk masih kosong di Supabase!", 
+        show_alert: true 
+      });
+    }
 
-  await ctx.editMessageText(pesanBeli, {
-    parse_mode: "Markdown",
-    reply_markup: keyboard,
-  });
+    // Ambil produk pertama (Slot Tumbal)
+    const product = products[0];
+
+    if (!product || product.stock <= 0) {
+      return ctx.answerCallbackQuery({ 
+        text: `Stok slot tercatat: ${product?.stock ?? 0}. Silakan isi stok di Supabase.`, 
+        show_alert: true 
+      });
+    }
+
+    const hargaPerSlot = Number(product.price);
+    const stok = Number(product.stock);
+
+    // Daftar opsi kuantitas yang bisa dipilih
+    const opsiJumlah = [1, 2, 3, 5, 10];
+    const keyboard = new InlineKeyboard();
+
+    opsiJumlah.forEach((jumlah) => {
+      if (jumlah <= stok) {
+        const totalHarga = jumlah * hargaPerSlot;
+        keyboard.text(`🔹 ${jumlah} Slot - Rp ${totalHarga.toLocaleString("id-ID")}`, `beli_${product.id}_${jumlah}`).row();
+      }
+    });
+    keyboard.text("⬅️ Kembali", "back_to_menu");
+
+    const pesanBeli = 
+      `🛒 *BELI SLOT*\n\n` +
+      `📦 *Produk:* ${product.name}\n` +
+      `💵 *Harga per Slot:* Rp ${hargaPerSlot.toLocaleString("id-ID")}\n` +
+      `📊 *Sisa Stok:* ${stok} slot\n\n` +
+      `Silakan tentukan jumlah slot yang ingin dibeli:`;
+
+    await ctx.editMessageText(pesanBeli, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
+  } catch (err: any) {
+    console.error("Catch Error:", err);
+    return ctx.answerCallbackQuery({ 
+      text: `Kendala: ${err.message || "Gagal memuat produk"}`, 
+      show_alert: true 
+    });
+  }
 });
 
 // 3. User Memilih Jumlah Slot -> Buat Invoice & Kirim QRIS
