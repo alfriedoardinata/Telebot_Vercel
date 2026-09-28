@@ -265,26 +265,46 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   const { data: trx } = await supabase.from("transactions").select("*, products(*)").eq("id", trxId).single();
 
   if (trx && trx.status !== "SELESAI") {
+    // 1. Update status transaksi jadi SELESAI
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
 
-    // Kurangi stok jika tersedia
+    // 2. Kurangi stok produk jika tersedia
     if (trx.products && trx.products.stock > 0) {
       await supabase.from("products").update({ stock: trx.products.stock - 1 }).eq("id", trx.product_id);
     }
 
-    // Beritahu pembeli
+    // 3. Ambil username atau link admin dari akun Anda
+    const adminUsername = ctx.from?.username;
+    const adminLink = adminUsername 
+      ? `https://t.me/${adminUsername}` 
+      : `tg://user?id=${adminId}`;
+
+    const pesanSukses = 
+      `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
+      `Pesanan *#TRX-${trx.id}* telah diverifikasi dan disetujui.\n` +
+      `Terima kasih atas pesanan Anda!\n\n` +
+      `Silahkan konfirmasi akun ke [Saya](${adminLink})`;
+
+    // Tombol alternatif tepat di bawah pesan agar pembeli makin mudah klik
+    const customerKeyboard = new InlineKeyboard().url("💬 Chat Admin (Klaim Akun)", adminLink);
+
+    // Kirim notifikasi lengkap ke pembeli
     await ctx.api.sendMessage(
       trx.user_id,
-      `🎉 *PEMBAYARAN DITERIMA!*\nPesanan *#TRX-${trx.id}* telah diverifikasi dan disetujui.\nTerima kasih atas pesanan Anda!`,
-      { parse_mode: "Markdown" }
+      pesanSukses,
+      { 
+        parse_mode: "Markdown",
+        reply_markup: customerKeyboard 
+      }
     );
 
+    // Ubah tampilan pesan di chat admin
     await ctx.editMessageCaption({
-      caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*\nStok produk otomatis dikurangi.`,
+      caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*\nPembeli sudah diarahkan ke chat Anda.`,
       parse_mode: "Markdown",
     });
   }
-  await ctx.answerCallbackQuery({ text: "Pesanan disetujui." });
+  await ctx.answerCallbackQuery({ text: "Pesanan berhasil disetujui." });
 });
 
 // 9. Admin Menolak Pesanan
