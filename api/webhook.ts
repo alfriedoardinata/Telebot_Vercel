@@ -96,7 +96,7 @@ bot.callbackQuery("menu_beli", async (ctx) => {
   }
 });
 
-// 3. User Memilih Jumlah Slot -> Buat Invoice & Kirim QRIS
+// 3. User Memilih Jumlah Slot -> Buat Invoice & Kirim QRIS (Kode Unik = Jumlah Slot)
 bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   const productId = parseInt(ctx.match[1]);
   const jumlahBeli = parseInt(ctx.match[2]);
@@ -107,9 +107,16 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
     return ctx.answerCallbackQuery({ text: "Maaf, stok tidak mencukupi!", show_alert: true });
   }
 
-  const totalTagihan = product.price * jumlahBeli;
+  // Hitung subtotal dasar
+  const subtotal = product.price * jumlahBeli;
 
-  // Catat transaksi di Supabase
+  // Kode unik persis mengikuti jumlah slot yang dibeli
+  const kodeUnik = jumlahBeli;
+
+  // Total tagihan akhir yang harus ditransfer
+  const totalTagihan = subtotal + kodeUnik;
+
+  // Catat transaksi ke Supabase dengan nominal tagihan unik
   const { data: trx, error } = await supabase.from("transactions").insert([
     {
       user_id: ctx.from.id,
@@ -131,11 +138,14 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
     `🧾 *INVOICE PEMBAYARAN #TRX-${trx.id}*\n\n` +
     `📦 Pembelian: *${jumlahBeli} Slot*\n` +
     `💵 Harga Satuan: Rp ${product.price.toLocaleString("id-ID")}\n` +
+    `🔢 Kode Unik: *+Rp ${kodeUnik}* (sesuai ${jumlahBeli} slot)\n` +
     `💰 *Total Tagihan: Rp ${totalTagihan.toLocaleString("id-ID")}*\n\n` +
+    `⚠️ *PERHATIAN:*\n` +
+    `Mohon transfer tepat hingga digit terakhir (*Rp ${totalTagihan.toLocaleString("id-ID")}*) agar pembayaran mudah diverifikasi.\n\n` +
     `📌 *Instruksi Pembayaran:*\n` +
     `1. Scan QRIS di atas via m-Banking atau E-Wallet.\n` +
-    `2. Transfer pas sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}*.\n` +
-    `3. *Kirim foto/screenshot bukti transfer langsung ke bot ini.*`;
+    `2. Transfer sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}*.\n` +
+    `3. *Kirim screenshot bukti transfer langsung ke bot ini.*`;
 
   await ctx.replyWithPhoto(QRIS_IMAGE_URL, {
     caption: invoiceText,
