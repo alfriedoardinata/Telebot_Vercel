@@ -278,9 +278,13 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
     // 1. Update status transaksi jadi SELESAI
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
 
-    // 2. Kurangi stok produk jika tersedia
-    if (trx.products && trx.products.stock > 0) {
-      await supabase.from("products").update({ stock: trx.products.stock - 1 }).eq("id", trx.product_id);
+    // 2. DI SINI LETAK SCRIPT PENGURANGAN STOK TERSEBUT:
+    const jumlahBeli = (trx.amount % trx.products.price) || 1;
+    if (trx.products && trx.products.stock >= jumlahBeli) {
+      await supabase
+        .from("products")
+        .update({ stock: trx.products.stock - jumlahBeli })
+        .eq("id", trx.product_id);
     }
 
     // 3. Ambil username atau link admin dari akun Anda
@@ -295,10 +299,8 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
       `Terima kasih atas pesanan Anda!\n\n` +
       `Silahkan konfirmasi akun ke [Saya](${adminLink})`;
 
-    // Tombol alternatif tepat di bawah pesan agar pembeli makin mudah klik
     const customerKeyboard = new InlineKeyboard().url("💬 Chat Admin (Klaim Akun)", adminLink);
 
-    // Kirim notifikasi lengkap ke pembeli
     await ctx.api.sendMessage(
       trx.user_id,
       pesanSukses,
@@ -308,7 +310,6 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
       }
     );
 
-    // Ubah tampilan pesan di chat admin
     await ctx.editMessageCaption({
       caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*\nPembeli sudah diarahkan ke chat Anda.`,
       parse_mode: "Markdown",
