@@ -65,7 +65,7 @@ bot.callbackQuery("menu_beli", async (ctx) => {
     const stok = Number(product.stock);
 
     // Daftar opsi kuantitas yang bisa dipilih
-    const opsiJumlah = [1, 2, 3, 5, 10];
+    const opsiJumlah = [5, 10, 15, 20, 25];
     const keyboard = new InlineKeyboard();
 
     opsiJumlah.forEach((jumlah) => {
