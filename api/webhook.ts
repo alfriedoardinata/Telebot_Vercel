@@ -263,61 +263,75 @@ bot.callbackQuery("menu_profil", async (ctx) => {
 // ==================== 5. ADMIN VERIFIKASI (ACC) ====================
 bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
-  const { data: trx } = await supabase.from("transactions").select("*, products(*)").eq("id", trxId).single();
+  const { data: trx } = await supabase
+    .from("transactions")
+    .select("*, products(*)")
+    .eq("id", trxId)
+    .single();
 
   if (trx && trx.status !== "SELESAI") {
     // 1. Update status transaksi menjadi SELESAI
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
 
-    // Hitung jumlah item yang dibeli
+    // Hitung berapa item yang dibeli dari selisih amount / harga
     const jumlahBeli = (trx.amount % trx.products.price) || 1;
 
-    // 2. Cek apakah ada stok data di tabel product_stocks (untuk produk cookie/file)
-    const { data: availableItems } = await supabase
-      .from("product_stocks")
-      .select("*")
-      .eq("product_id", trx.product_id)
-      .eq("is_used", false)
-      .limit(jumlahBeli);
+    // 2. KHUSUS PRODUK OTOMATIS: Cookie Fresh (ID 2), Cookie Bekas (ID 3), FP (ID 4)
+    if (trx.product_id !== 1) {
+      // Ambil data akun yang belum dipakai dari tabel product_stocks
+      const { data: stockItems, error: stockErr } = await supabase
+        .from("product_stocks")
+        .select("*")
+        .eq("product_id", trx.product_id)
+        .eq("is_used", false)
+        .limit(jumlahBeli);
 
-    // JIKA PRODUK BERBASIS FILE/DATA (Stok ditemukan di product_stocks):
-    if (availableItems && availableItems.length > 0) {
-      // Tandai item-item ini sudah terpakai (is_used = true)
-      const usedIds = availableItems.map((item) => item.id);
-      await supabase.from("product_stocks").update({ is_used: true }).in("id", usedIds);
+      if (stockItems && stockItems.length > 0) {
+        // Tandai data tersebut sudah terpakai
+        const itemIds = stockItems.map((item) => item.id);
+        await supabase.from("product_stocks").update({ is_used: true }).in("id", itemIds);
 
-      // Kurangi jumlah stok di tabel products
-      if (trx.products.stock >= availableItems.length) {
+        // Sinkronkan sisa stok di tabel products
         await supabase
           .from("products")
-          .update({ stock: trx.products.stock - availableItems.length })
+          .update({ stock: Math.max(0, trx.products.stock - stockItems.length) })
           .eq("id", trx.product_id);
+
+        // Susun isi data ke dalam format teks
+        const isiTeksFile = stockItems.map((item) => item.account_data).join("\n\n");
+        const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
+
+        const namaFileBersih = trx.products.name.replace(/\s+/g, "_");
+
+        const pesanPengiriman =
+          `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
+          `Pesanan *#TRX-${trx.id}* telah diverifikasi dan disetujui.\n` +
+          `📦 Produk: *${trx.products.name} (${stockItems.length} item)*\n\n` +
+          `✅ *Pesanan Anda terlampir pada file .txt di bawah ini.*\n` +
+          `Terima kasih telah berbelanja!`;
+
+        // Kirim file .txt ke pelanggan TANPA link/tombol chat admin
+        await ctx.api.sendDocument(
+          trx.user_id,
+          new InputFile(fileBuffer, `${namaFileBersih}_TRX${trx.id}.txt`),
+          {
+            caption: pesanPengiriman,
+            parse_mode: "Markdown",
+          }
+        );
+      } else {
+        // Antisipasi jika data di product_stocks ternyata habis
+        await ctx.api.sendMessage(
+          trx.user_id,
+          `🎉 *PEMBAYARAN DITERIMA!*\n\nPesanan *#TRX-${trx.id}* disetujui, namun antrean stok otomatis sedang kosong. Admin akan segera mengirimkannya secara manual.`,
+          { parse_mode: "Markdown" }
+        );
       }
-
-      // Gabungkan isi data akun/cookie menjadi baris teks
-      const isiFileText = availableItems.map((item) => item.account_data).join("\n\n");
-      const fileBuffer = Buffer.from(isiFileText, "utf-8");
-
-      const pesanPenerimaan =
-        `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
-        `Pesanan *#TRX-${trx.id}* telah disetujui.\n` +
-        `📦 Produk: *${trx.products.name} (${availableItems.length} item)*\n\n` +
-        `Data pesanan Anda terlampir dalam file *.txt* di bawah ini. Terima kasih telah berbelanja!`;
-
-      // Kirim dokumen .txt langsung ke pembeli
-      await ctx.api.sendDocument(
-        trx.user_id,
-        new InputFile(fileBuffer, `${trx.products.name.replace(/\s+/g, "_")}_TRX${trx.id}.txt`),
-        {
-          caption: pesanPenerimaan,
-          parse_mode: "Markdown",
-        }
-      );
     } 
-    // JIKA PRODUK MANUAL (Seperti Slot Tumbal yang tidak ada datanya di product_stocks):
+    // 3. KHUSUS PRODUK MANUAL: Slot Tumbal (ID 1)
     else {
-      // Kurangi stok manual di tabel products
-      if (trx.products && trx.products.stock >= jumlahBeli) {
+      // Kurangi stok Slot Tumbal di tabel products
+      if (trx.products.stock >= jumlahBeli) {
         await supabase
           .from("products")
           .update({ stock: trx.products.stock - jumlahBeli })
@@ -343,13 +357,14 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
       });
     }
 
-    // Ubah keterangan pesan di sisi chat Admin
+    // Ubah tampilan pesan di chat admin
     await ctx.editMessageCaption({
-      caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*\nData produk berhasil diproses ke pelanggan.`,
+      caption: `✅ *PESANAN #TRX-${trx.id} BERHASIL DI-ACC*\nSistem telah mengirimkan pesanan sesuai jenis produk.`,
       parse_mode: "Markdown",
     });
   }
-  await ctx.answerCallbackQuery({ text: "Pesanan berhasil disetujui." });
+
+  await ctx.answerCallbackQuery({ text: "Pesanan berhasil diproses." });
 });
 
 // 6. Tombol Kembali ke Menu Utama
