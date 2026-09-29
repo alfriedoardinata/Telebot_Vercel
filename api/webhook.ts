@@ -85,7 +85,7 @@ bot.command("start", async (ctx) => {
   }
 
   const keyboard = new InlineKeyboard()
-    .text("🛒 Beli Slot", "menu_beli").row()
+    .text("🛒 Katalog Produk", "menu_beli").row()
     .text("👤 Profil Saya", "menu_profil")
     .text("📜 Riwayat Pesanan", "menu_history").row()
     .url("💬 Hubungi Admin", `tg://user?id=${adminId || ctx.from?.id}`);
