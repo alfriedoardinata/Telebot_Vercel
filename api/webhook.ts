@@ -411,4 +411,4 @@ bot.callbackQuery("menu_history", async (ctx) => {
   await ctx.editMessageText(riwayatText, { parse_mode: "Markdown", reply_markup: keyboard });
 });
 
-export default webhookCallback(bot, "std/http");
+export default webhookCallback(bot, "http");
