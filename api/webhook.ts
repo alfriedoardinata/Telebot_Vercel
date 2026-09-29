@@ -82,7 +82,38 @@ bot.callbackQuery("menu_beli", async (ctx) => {
   }
 });
 
-// 3. PILIH PRODUK -> TAMPILKAN COUNTER (+ dan -)
+// 3. PILIH PRODUK
+// ==================== COUNTER & SHORTCUT BULK CEPAT ====================
+
+// Helper tombol counter yang membawa data harga & stok langsung di tombol (Zero DB Call)
+function buatKeyboardBulk(prodId: number, qty: number, harga: number, stok: number) {
+  const totalHarga = qty * harga;
+  const keyboard = new InlineKeyboard();
+
+  // Baris 1: Tombol -1, Tampilan Jumlah, +1
+  keyboard
+    .text("➖ 1", `bulk_adj_${prodId}_${Math.max(1, qty - 1)}_${harga}_${stok}`)
+    .text(`📦 ${qty} Item`, "noop")
+    .text("➕ 1", `bulk_adj_${prodId}_${Math.min(stok, qty + 1)}_${harga}_${stok}`)
+    .row();
+
+  // Baris 2: Shortcut Bulk Tambah Cepat (+5, +10, dan Ambil Semua)
+  keyboard
+    .text("➕ 5", `bulk_adj_${prodId}_${Math.min(stok, qty + 5)}_${harga}_${stok}`)
+    .text("➕ 10", `bulk_adj_${prodId}_${Math.min(stok, qty + 10)}_${harga}_${stok}`)
+    .text("🚀 Max", `bulk_adj_${prodId}_${stok}_${harga}_${stok}`)
+    .row();
+
+  // Baris 3: Lanjut Bayar & Kembali
+  keyboard
+    .text(`💳 Beli ${qty} Item (Rp ${totalHarga.toLocaleString("id-ID")})`, `beli_${prodId}_${qty}`)
+    .row()
+    .text("⬅️ Kembali ke Katalog", "menu_beli");
+
+  return keyboard;
+}
+
+// 1. Tampilan Awal Saat Produk Dipilih
 bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   const prodId = parseInt(ctx.match[1]);
   const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
@@ -115,62 +146,29 @@ bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   const pesanPilihan = 
     `📦 *PRODUK: ${product.name}*\n\n` +
     `💵 *Harga Satuan:* Rp ${harga.toLocaleString("id-ID")}\n` +
-    `📊 *Sisa Stok Tersedia:* ${stok} item\n\n` +
-    `Gunakan tombol *[-] / [+]* di bawah untuk menentukan jumlah:`;
+    `📊 *Stok Tersedia:* ${stok} item\n\n` +
+    `Gunakan tombol di bawah untuk mengatur jumlah item:`;
 
   await ctx.editMessageText(pesanPilihan, {
     parse_mode: "Markdown",
-    reply_markup: buatKeyboardCounter(product.id, qtyAwal, harga),
+    reply_markup: buatKeyboardBulk(product.id, qtyAwal, harga, stok),
   });
   await ctx.answerCallbackQuery();
 });
 
-// Tombol Kurang (-)
-bot.callbackQuery(/^qty_min_(\d+)_(\d+)$/, async (ctx) => {
+// 2. Handler Pengatur Jumlah Cepat (Zero Database Call -> Langsung Berubah Tanpa Delay)
+bot.callbackQuery(/^bulk_adj_(\d+)_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
   const prodId = parseInt(ctx.match[1]);
-  const currentQty = parseInt(ctx.match[2]);
-
-  if (currentQty <= 1) {
-    return ctx.answerCallbackQuery({ text: "Minimal pembelian adalah 1 item!" });
-  }
-
-  const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
-  if (!product) return ctx.answerCallbackQuery();
-
-  const newQty = currentQty - 1;
-  const harga = Number(product.price);
+  const newQty = parseInt(ctx.match[2]);
+  const harga = parseInt(ctx.match[3]);
+  const stok = parseInt(ctx.match[4]);
 
   await ctx.editMessageReplyMarkup({
-    reply_markup: buatKeyboardCounter(prodId, newQty, harga),
+    reply_markup: buatKeyboardBulk(prodId, newQty, harga, stok),
   });
   await ctx.answerCallbackQuery();
 });
 
-// Tombol Tambah (+)
-bot.callbackQuery(/^qty_plus_(\d+)_(\d+)$/, async (ctx) => {
-  const prodId = parseInt(ctx.match[1]);
-  const currentQty = parseInt(ctx.match[2]);
-
-  const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
-  if (!product) return ctx.answerCallbackQuery();
-
-  if (currentQty >= product.stock) {
-    return ctx.answerCallbackQuery({ 
-      text: `Maksimal pembelian hanya ${product.stock} item!`, 
-      show_alert: true 
-    });
-  }
-
-  const newQty = currentQty + 1;
-  const harga = Number(product.price);
-
-  await ctx.editMessageReplyMarkup({
-    reply_markup: buatKeyboardCounter(prodId, newQty, harga),
-  });
-  await ctx.answerCallbackQuery();
-});
-
-// Tombol dummy teks kuantitas
 bot.callbackQuery("noop", async (ctx) => {
   await ctx.answerCallbackQuery();
 });
