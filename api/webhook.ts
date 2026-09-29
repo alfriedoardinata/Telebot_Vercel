@@ -96,65 +96,89 @@ bot.command("start", async (ctx) => {
   );
 });
 
-// 2. Klik Tombol Beli Slot -> Menampilkan Info Harga & Pilihan Jumlah Slot
+// 2. Menu Beli -> Menampilkan 4 Katalog Produk
 bot.callbackQuery("menu_beli", async (ctx) => {
   try {
-    const { data: products, error } = await supabase.from("products").select("*");
+    const { data: products, error } = await supabase
+      .from("products")
+      .select("*")
+      .order("id", { ascending: true });
 
     if (error || !products || products.length === 0) {
       return ctx.answerCallbackQuery({ text: "Gagal memuat data produk!", show_alert: true });
     }
 
-    const product = products[0];
-
-    // JIKA STOK HABIS (0 atau kurang)
-    if (!product || product.stock <= 0) {
-      const adminLink = adminId ? `tg://user?id=${adminId}` : "https://t.me";
-
-      const pesanHabis = 
-        `⚠️ *PEMBERITAHUAN*\n\n` +
-        `Maaf, stock slot sedang habis!\n` +
-        `Silakan pantau berkala atau hubungi admin untuk info restock selanjutnya.`;
-
-      const keyboardHabis = new InlineKeyboard()
-        .url("💬 Tanya Restock ke Admin", adminLink).row()
-        .text("⬅️ Kembali ke Menu", "back_to_menu");
-
-      return await ctx.editMessageText(pesanHabis, {
-        parse_mode: "Markdown",
-        reply_markup: keyboardHabis,
-      });
-    }
-
-    // JIKA STOK MASIH ADA:
-    const hargaPerSlot = Number(product.price);
-    const stok = Number(product.stock);
-
-    const opsiJumlah = [5, 10, 15, 20, 25];
     const keyboard = new InlineKeyboard();
 
-    opsiJumlah.forEach((jumlah) => {
-      if (jumlah <= stok) {
-        const totalHarga = jumlah * hargaPerSlot;
-        keyboard.text(`🔹 ${jumlah} Slot - Rp ${totalHarga.toLocaleString("id-ID")}`, `beli_${product.id}_${jumlah}`).row();
-      }
+    // Buat tombol untuk ke-4 produk
+    products.forEach((prod) => {
+      const statusStok = prod.stock > 0 ? `(Stok: ${prod.stock})` : "[HABIS]";
+      keyboard
+        .text(`📦 ${prod.name} - Rp ${Number(prod.price).toLocaleString("id-ID")} ${statusStok}`, `pilih_prod_${prod.id}`)
+        .row();
     });
-    keyboard.text("⬅️ Kembali", "back_to_menu");
+    keyboard.text("⬅️ Kembali ke Menu", "back_to_menu");
 
-    const pesanBeli = 
-      `🛒 *BELI SLOT*\n\n` +
-      `📦 *Produk:* ${product.name}\n` +
-      `💵 *Harga per Slot:* Rp ${hargaPerSlot.toLocaleString("id-ID")}\n` +
-      `📊 *Sisa Stok:* ${stok} slot\n\n` +
-      `Silakan tentukan jumlah slot yang ingin dibeli:`;
-
-    await ctx.editMessageText(pesanBeli, {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    });
+    await ctx.editMessageText(
+      `🛒 *KATALOG PRODUK*\n\nSilakan pilih produk yang ingin Anda beli:`,
+      { parse_mode: "Markdown", reply_markup: keyboard }
+    );
   } catch (err: any) {
-    console.error("Catch Error:", err);
+    console.error("Error Katalog:", err);
   }
+});
+
+// Handler saat salah satu produk diklik
+bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
+  const prodId = parseInt(ctx.match[1]);
+  const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
+
+  if (!product) {
+    return ctx.answerCallbackQuery({ text: "Produk tidak ditemukan!", show_alert: true });
+  }
+
+  // Jika stok produk habis
+  if (product.stock <= 0) {
+    const adminLink = adminId ? `tg://user?id=${adminId}` : "https://t.me";
+    const pesanHabis = 
+      `⚠️ *PEMBERITAHUAN*\n\n` +
+      `Maaf, stok untuk *${product.name}* sedang habis!\n` +
+      `Silakan hubungi admin untuk info restock.`;
+
+    const keyboardHabis = new InlineKeyboard()
+      .url("💬 Tanya Admin", adminLink).row()
+      .text("⬅️ Pilih Produk Lain", "menu_beli");
+
+    return await ctx.editMessageText(pesanHabis, {
+      parse_mode: "Markdown",
+      reply_markup: keyboardHabis,
+    });
+  }
+
+  const harga = Number(product.price);
+  const stok = Number(product.stock);
+
+  const opsiJumlah = [1, 2, 3, 5, 10];
+  const keyboard = new InlineKeyboard();
+
+  opsiJumlah.forEach((jumlah) => {
+    if (jumlah <= stok) {
+      const total = jumlah * harga;
+      keyboard.text(`🔹 ${jumlah} Item - Rp ${total.toLocaleString("id-ID")}`, `beli_${product.id}_${jumlah}`).row();
+    }
+  });
+  keyboard.text("⬅️ Kembali ke Katalog", "menu_beli");
+
+  const pesanPilihan = 
+    `📦 *PRODUK: ${product.name}*\n\n` +
+    `💵 *Harga Satuan:* Rp ${harga.toLocaleString("id-ID")}\n` +
+    `📊 *Sisa Stok:* ${stok} item\n\n` +
+    `Tentukan jumlah yang ingin Anda beli:`;
+
+  await ctx.editMessageText(pesanPilihan, {
+    parse_mode: "Markdown",
+    reply_markup: keyboard,
+  });
 });
 
 // 3. User Memilih Jumlah Slot -> Buat Invoice & Kirim QRIS (Kode Unik = Jumlah Slot)
