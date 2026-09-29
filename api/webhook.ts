@@ -128,7 +128,22 @@ bot.callbackQuery("menu_beli", async (ctx) => {
   }
 });
 
-// Handler saat salah satu produk diklik
+// ==================== PILIH KUANTITAS INTERAKTIF (+ dan -) ====================
+
+// 3. Fungsi pembuat tampilan tombol counter
+function buatKeyboardCounter(prodId: number, qty: number, harga: number) {
+  const totalHarga = qty * harga;
+  return new InlineKeyboard()
+    .text("➖", `qty_min_${prodId}_${qty}`)
+    .text(`📦 ${qty} Item`, "noop") // tombol display saja
+    .text("➕", `qty_plus_${prodId}_${qty}`)
+    .row()
+    .text(`💳 Lanjut Pembayaran (Rp ${totalHarga.toLocaleString("id-ID")})`, `beli_${prodId}_${qty}`)
+    .row()
+    .text("⬅️ Kembali ke Katalog", "menu_beli");
+}
+
+// 1. Saat pertama kali produk dipilih (Default Qty = 1)
 bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   const prodId = parseInt(ctx.match[1]);
   const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
@@ -137,7 +152,6 @@ bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
     return ctx.answerCallbackQuery({ text: "Produk tidak ditemukan!", show_alert: true });
   }
 
-  // Jika stok produk habis
   if (product.stock <= 0) {
     const adminLink = adminId ? `tg://user?id=${adminId}` : "https://t.me";
     const pesanHabis = 
@@ -157,31 +171,72 @@ bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
 
   const harga = Number(product.price);
   const stok = Number(product.stock);
-
-  const opsiJumlah = [5, 10, 15, 20, 25];
-  const keyboard = new InlineKeyboard();
-
-  opsiJumlah.forEach((jumlah) => {
-    if (jumlah <= stok) {
-      const total = jumlah * harga;
-      keyboard.text(`🔹 ${jumlah} Item - Rp ${total.toLocaleString("id-ID")}`, `beli_${product.id}_${jumlah}`).row();
-    }
-  });
-  keyboard.text("⬅️ Kembali ke Katalog", "menu_beli");
+  const qtyAwal = 1;
 
   const pesanPilihan = 
     `📦 *PRODUK: ${product.name}*\n\n` +
     `💵 *Harga Satuan:* Rp ${harga.toLocaleString("id-ID")}\n` +
-    `📊 *Sisa Stok:* ${stok} item\n\n` +
-    `Tentukan jumlah yang ingin Anda beli:`;
+    `📊 *Sisa Stok Tersedia:* ${stok} item\n\n` +
+    `Gunakan tombol *[-] / [+]* di bawah ini untuk mengatur jumlah pembelian:`;
 
   await ctx.editMessageText(pesanPilihan, {
     parse_mode: "Markdown",
-    reply_markup: keyboard,
+    reply_markup: buatKeyboardCounter(product.id, qtyAwal, harga),
   });
+  await ctx.answerCallbackQuery();
 });
 
-// 3. User Memilih Jumlah Slot -> Buat Invoice & Kirim QRIS (Kode Unik = Jumlah Slot)
+// 2. Tombol Kurang (-)
+bot.callbackQuery(/^qty_min_(\d+)_(\d+)$/, async (ctx) => {
+  const prodId = parseInt(ctx.match[1]);
+  const currentQty = parseInt(ctx.match[2]);
+
+  if (currentQty <= 1) {
+    return ctx.answerCallbackQuery({ text: "Jumlah minimal pembelian adalah 1 item!" });
+  }
+
+  const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
+  if (!product) return ctx.answerCallbackQuery();
+
+  const newQty = currentQty - 1;
+  const harga = Number(product.price);
+
+  await ctx.editMessageReplyMarkup({
+    reply_markup: buatKeyboardCounter(prodId, newQty, harga),
+  });
+  await ctx.answerCallbackQuery();
+});
+
+// 3. Tombol Tambah (+)
+bot.callbackQuery(/^qty_plus_(\d+)_(\d+)$/, async (ctx) => {
+  const prodId = parseInt(ctx.match[1]);
+  const currentQty = parseInt(ctx.match[2]);
+
+  const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
+  if (!product) return ctx.answerCallbackQuery();
+
+  if (currentQty >= product.stock) {
+    return ctx.answerCallbackQuery({ 
+      text: `Maksimal pembelian hanya ${product.stock} item (sesuai sisa stok)!`, 
+      show_alert: true 
+    });
+  }
+
+  const newQty = currentQty + 1;
+  const harga = Number(product.price);
+
+  await ctx.editMessageReplyMarkup({
+    reply_markup: buatKeyboardCounter(prodId, newQty, harga),
+  });
+  await ctx.answerCallbackQuery();
+});
+
+// 4. Tombol dummy agar tombol teks kuantitas tidak memunculkan error saat diklik
+bot.callbackQuery("noop", async (ctx) => {
+  await ctx.answerCallbackQuery();
+});
+
+=====// 3. User Memilih Jumlah Slot -> Buat Invoice & Kirim QRIS (Kode Unik = Jumlah Slot)
 bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   const productId = parseInt(ctx.match[1]);
   const jumlahBeli = parseInt(ctx.match[2]);
