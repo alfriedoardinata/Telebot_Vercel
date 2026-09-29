@@ -7,7 +7,7 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const adminId = parseInt(process.env.ADMIN_ID || "0");
 
-const QRIS_IMAGE_URL = "https://haqwznpsrtojwyjkgigm.supabase.co/storage/v1/object/public/assets/qris.jpg";
+const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
 
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -46,7 +46,7 @@ bot.command("start", async (ctx) => {
     .url("💬 Hubungi Admin", `tg://user?id=${adminId || ctx.from?.id}`);
 
   await ctx.reply(
-    `👋 Halo *${userName}*!\n\nSelamat datang di Store Bot. Silakan pilih menu di bawah ini:`,
+    `👋 Halo *${userName}*!\n\nSelamat datang di Toko Tumbal. Silakan pilih menu di bawah ini:`,
     { parse_mode: "Markdown", reply_markup: keyboard }
   );
 });
