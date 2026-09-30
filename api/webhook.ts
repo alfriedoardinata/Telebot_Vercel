@@ -274,7 +274,7 @@ bot.on("message:photo", async (ctx) => {
   });
 });
 
-// 6. ADMIN ACC (FORMAT FILE BERSIH & LANGSUNG KE DATA)
+// 6. ADMIN ACC (PENGIRIMAN FILE FORMAT SUPER RAW PER BARIS)
 bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
   const { data: trx } = await supabase
@@ -284,11 +284,11 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
     .single();
 
   if (trx && trx.status !== "SELESAI") {
-    // 1. Update status transaksi menjadi SELESAI
+    // 1. Tandai transaksi telah selesai
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
     const jumlahBeli = (trx.amount % trx.products.price) || 1;
 
-    // 2. KHUSUS PRODUK BERKAS: Cookie Fresh (2), Cookie Bekas (3), FP (4)
+    // 2. KHUSUS PRODUK BERKAS DIGITAL: Cookie Fresh (2), Cookie Bekas (3), FP (4)
     if (trx.product_id !== 1) {
       const { data: stockItems } = await supabase
         .from("product_stocks")
@@ -298,46 +298,27 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
         .limit(jumlahBeli);
 
       if (stockItems && stockItems.length > 0) {
-        // Tandai data terpakai di database
+        // Tandai data terpakai di Supabase
         const itemIds = stockItems.map((item) => item.id);
         await supabase.from("product_stocks").update({ is_used: true }).in("id", itemIds);
 
-        // Update sisa kuota di tabel products
+        // Kurangi stok di tabel products
         await supabase
           .from("products")
           .update({ stock: Math.max(0, trx.products.stock - stockItems.length) })
           .eq("id", trx.product_id);
 
-        // Susun daftar data secara rapi
-        const daftarItem = stockItems
-          .map((item, index) => `[ITEM ${index + 1}]\n${item.account_data}`)
-          .join("\n\n");
-
-        // Format teks file .txt bersih tanpa petunjuk yang panjang
-        const isiTeksFile = 
-`========================================
-       DETAIL PESANAN #TRX-${trx.id}
-========================================
-Produk  : ${trx.products.name}
-Jumlah  : ${stockItems.length} Item
-Tanggal : ${new Date().toLocaleDateString("id-ID")}
-Status  : Selesai (Verified)
-========================================
-
-${daftarItem}
-
-========================================
-Garansi 1x24 Jam | Simpan data dengan aman.
-========================================`;
-
+        // FORMAT SUPER RAW: Murni data akun dipisahkan baris baru tanpa embel-embel teks
+        const isiTeksFile = stockItems.map((item) => item.account_data.trim()).join("\n");
         const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
         const namaFile = trx.products.name.replace(/\s+/g, "_");
 
+        // Detail transaksi tetap jelas dan lengkap di caption pesan Telegram
         const pesanPengiriman =
           `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
           `Pesanan *#TRX-${trx.id}* telah disetujui.\n` +
           `📦 Produk: *${trx.products.name} (${stockItems.length} item)*\n\n` +
-          `✅ Data pesanan Anda terlampir pada file *.txt* di bawah ini.`;
+          `✅ File *.txt* terlampir di bawah (format raw per baris, siap import/pakai).`;
 
         await ctx.api.sendDocument(
           trx.user_id,
@@ -347,7 +328,7 @@ Garansi 1x24 Jam | Simpan data dengan aman.
       } else {
         await ctx.api.sendMessage(
           trx.user_id,
-          `🎉 *PEMBAYARAN DITERIMA!*\n\nPesanan *#TRX-${trx.id}* disetujui, namun stok otomatis sedang kosong. Admin akan segera mengirimkannya secara manual.`,
+          `🎉 *PEMBAYARAN DITERIMA!*\n\nPesanan *#TRX-${trx.id}* disetujui, namun stok otomatis sedang kosong. Admin akan segera mengirimkannya manual.`,
           { parse_mode: "Markdown" }
         );
       }
@@ -372,7 +353,7 @@ Garansi 1x24 Jam | Simpan data dengan aman.
       await ctx.api.sendMessage(trx.user_id, pesanManual, { parse_mode: "Markdown", reply_markup: customerKeyboard });
     }
 
-    // Update notifikasi di ruang chat admin
+    // Ubah caption pada notifikasi bot admin
     await ctx.editMessageCaption({
       caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*`,
       parse_mode: "Markdown",
