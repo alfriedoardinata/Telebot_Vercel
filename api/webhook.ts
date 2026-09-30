@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 const botToken = process.env.BOT_TOKEN || "";
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
-const adminId = parseInt(process.env.ADMIN_ID || "0");
+const adminId = 8656590789(process.env.ADMIN_ID || "0");
 
 const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
 
@@ -205,10 +205,11 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   });
 });
 
-// 5. TERIMA BUKTI TRANSFER (FOTO)
+// ==================== 5. TERIMA BUKTI TRANSFER (FOTO) ====================
 bot.on("message:photo", async (ctx) => {
   const userId = ctx.from.id;
 
+  // 5.1. Ambil data transaksi yang statusnya MENUNGGU_PEMBAYARAN
   const { data: trx, error } = await supabase
     .from("transactions")
     .select("*, products(*)")
@@ -224,6 +225,7 @@ bot.on("message:photo", async (ctx) => {
 
   const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
 
+  // 5.2. Kunci status transaksi menjadi MENUNGGU_ACC dan simpan file foto
   const { error: updateErr } = await supabase
     .from("transactions")
     .update({ payment_proof_file_id: fileId, status: "MENUNGGU_ACC" })
@@ -245,18 +247,27 @@ bot.on("message:photo", async (ctx) => {
     `📦 *Produk:* ${trx.products?.name}\n` +
     `💰 *Total:* Rp ${trx.amount.toLocaleString("id-ID")}`;
 
+  // 5.3. Kirim notifikasi foto ke akun admin
   try {
-    if (adminId && adminId !== 0) {
-      await ctx.api.sendPhoto(adminId, fileId, {
-        caption: keteranganAdmin,
-        parse_mode: "Markdown",
-        reply_markup: adminKeyboard,
-      });
-    } else {
-      console.error("ADMIN_ID belum terisi di Environment Variables!");
-    }
+    await ctx.api.sendPhoto(adminId, fileId, {
+      caption: keteranganAdmin,
+      parse_mode: "Markdown",
+      reply_markup: adminKeyboard,
+    });
   } catch (err: any) {
-    console.error("Gagal mengirim bukti transfer ke admin:", err.message);
+    console.error("Gagal mengirim foto ke admin, beralih ke teks:", err);
+    try {
+      await ctx.api.sendMessage(
+        adminId,
+        `${keteranganAdmin}\n\n⚠️ *(Foto tidak dapat diteruskan langsung, cek riwayat bukti di database)*`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: adminKeyboard,
+        }
+      );
+    } catch (innerErr: any) {
+      console.error("Gagal total kirim ke admin:", innerErr);
+    }
   }
 });
 
