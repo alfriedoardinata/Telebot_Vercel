@@ -7,22 +7,34 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const adminId = parseInt(process.env.ADMIN_ID || "0");
 
-const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
+const QRIS_IMAGE_URL = "https://haqwznpsrtojwyjkgigm.supabase.co/storage/v1/object/public/assets/qris.jpg";
 
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Helper pembuat tampilan tombol counter (+ dan -)
-function buatKeyboardCounter(prodId: number, qty: number, harga: number) {
+// ==================== HELPER KEYBOARD BULK (ANTI DELAY) ====================
+function buatKeyboardBulk(prodId: number, qty: number, harga: number, stok: number) {
   const totalHarga = qty * harga;
-  return new InlineKeyboard()
-    .text("➖", `qty_min_${prodId}_${qty}`)
+  const keyboard = new InlineKeyboard();
+
+  keyboard
+    .text("➖ 1", `bulk_adj_${prodId}_${Math.max(1, qty - 1)}_${harga}_${stok}`)
     .text(`📦 ${qty} Item`, "noop")
-    .text("➕", `qty_plus_${prodId}_${qty}`)
-    .row()
-    .text(`💳 Lanjut Pembayaran (Rp ${totalHarga.toLocaleString("id-ID")})`, `beli_${prodId}_${qty}`)
+    .text("➕ 1", `bulk_adj_${prodId}_${Math.min(stok, qty + 1)}_${harga}_${stok}`)
+    .row();
+
+  keyboard
+    .text("➕ 5", `bulk_adj_${prodId}_${Math.min(stok, qty + 5)}_${harga}_${stok}`)
+    .text("➕ 10", `bulk_adj_${prodId}_${Math.min(stok, qty + 10)}_${harga}_${stok}`)
+    .text("🚀 Max", `bulk_adj_${prodId}_${stok}_${harga}_${stok}`)
+    .row();
+
+  keyboard
+    .text(`💳 Beli ${qty} Item (Rp${totalHarga.toLocaleString("id-ID")})`, `beli_${prodId}_${qty}`)
     .row()
     .text("⬅️ Kembali ke Katalog", "menu_beli");
+
+  return keyboard;
 }
 
 // 1. MENU UTAMA (/start)
@@ -46,7 +58,7 @@ bot.command("start", async (ctx) => {
     .url("💬 Hubungi Admin", `tg://user?id=${adminId || ctx.from?.id}`);
 
   await ctx.reply(
-    `👋 Halo *${userName}*!\n\nSelamat datang di Toko Tumbal. Silakan pilih menu di bawah ini:`,
+    `👋 Halo *${userName}*!\n\nSelamat datang di Store Bot. Silakan pilih menu di bawah ini:`,
     { parse_mode: "Markdown", reply_markup: keyboard }
   );
 });
@@ -82,38 +94,7 @@ bot.callbackQuery("menu_beli", async (ctx) => {
   }
 });
 
-// 3. PILIH PRODUK
-// ==================== COUNTER & SHORTCUT BULK CEPAT ====================
-
-// Helper tombol counter yang membawa data harga & stok langsung di tombol (Zero DB Call)
-function buatKeyboardBulk(prodId: number, qty: number, harga: number, stok: number) {
-  const totalHarga = qty * harga;
-  const keyboard = new InlineKeyboard();
-
-  // Baris 1: Tombol -1, Tampilan Jumlah, +1
-  keyboard
-    .text("➖ 1", `bulk_adj_${prodId}_${Math.max(1, qty - 1)}_${harga}_${stok}`)
-    .text(`📦 ${qty} Item`, "noop")
-    .text("➕ 1", `bulk_adj_${prodId}_${Math.min(stok, qty + 1)}_${harga}_${stok}`)
-    .row();
-
-  // Baris 2: Shortcut Bulk Tambah Cepat (+5, +10, dan Ambil Semua)
-  keyboard
-    .text("➕ 5", `bulk_adj_${prodId}_${Math.min(stok, qty + 5)}_${harga}_${stok}`)
-    .text("➕ 10", `bulk_adj_${prodId}_${Math.min(stok, qty + 10)}_${harga}_${stok}`)
-    .text("🚀 Max", `bulk_adj_${prodId}_${stok}_${harga}_${stok}`)
-    .row();
-
-  // Baris 3: Lanjut Bayar & Kembali
-  keyboard
-    .text(`💳 Beli ${qty} Item (Rp ${totalHarga.toLocaleString("id-ID")})`, `beli_${prodId}_${qty}`)
-    .row()
-    .text("⬅️ Kembali ke Katalog", "menu_beli");
-
-  return keyboard;
-}
-
-// 1. Tampilan Awal Saat Produk Dipilih
+// 3. PILIH PRODUK -> TAMPILKAN COUNTER & SHORTCUT BULK
 bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   const prodId = parseInt(ctx.match[1]);
   const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
@@ -156,7 +137,7 @@ bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
-// 2. Handler Pengatur Jumlah Cepat (Zero Database Call -> Langsung Berubah Tanpa Delay)
+// Handler Penyesuaian Jumlah Bulk (Zero Database Call)
 bot.callbackQuery(/^bulk_adj_(\d+)_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
   const prodId = parseInt(ctx.match[1]);
   const newQty = parseInt(ctx.match[2]);
@@ -212,7 +193,7 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
     `🔢 Kode Unik: *+Rp ${kodeUnik}*\n` +
     `💰 *Total Tagihan: Rp ${totalTagihan.toLocaleString("id-ID")}*\n\n` +
     `⚠️ *PERHATIAN:*\n` +
-    `Mohon transfer tepat hingga nominal digit terakhir (*Rp ${totalTagihan.toLocaleString("id-ID")}*).\n\n` +
+    `Mohon transfer tepat hingga digit terakhir (*Rp ${totalTagihan.toLocaleString("id-ID")}*).\n\n` +
     `📌 *Instruksi:*\n` +
     `1. Scan QRIS di atas.\n` +
     `2. Transfer sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}*.\n` +
@@ -224,11 +205,10 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   });
 });
 
-// 5. TERIMA BUKTI TRANSFER (FOTO) - DILENGKAPI PENCEGAH DOUBLE EXECUTION & ERROR HANDLING
+// 5. TERIMA BUKTI TRANSFER (FOTO)
 bot.on("message:photo", async (ctx) => {
   const userId = ctx.from.id;
 
-  // 1. Cari transaksi yang statusnya MENUNGGU_PEMBAYARAN
   const { data: trx, error } = await supabase
     .from("transactions")
     .select("*, products(*)")
@@ -238,15 +218,12 @@ bot.on("message:photo", async (ctx) => {
     .limit(1)
     .maybeSingle();
 
-  // Jika tidak ditemukan atau sudah terproses, langsung berhenti agar tidak dobel pesan
   if (error || !trx) {
     return;
   }
 
-  // Ambil file_id foto dengan resolusi tertinggi
   const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
 
-  // 2. Kunci dan perbarui status transaksi di database
   const { error: updateErr } = await supabase
     .from("transactions")
     .update({ payment_proof_file_id: fileId, status: "MENUNGGU_ACC" })
@@ -255,10 +232,8 @@ bot.on("message:photo", async (ctx) => {
 
   if (updateErr) return;
 
-  // Balas ke customer
   await ctx.reply("✅ Bukti pembayaran berhasil diterima. Mohon tunggu verifikasi admin.");
 
-  // Tombol aksi untuk admin
   const adminKeyboard = new InlineKeyboard()
     .text("✅ Terima (ACC)", `acc_${trx.id}`)
     .text("❌ Tolak", `reject_${trx.id}`);
@@ -270,7 +245,6 @@ bot.on("message:photo", async (ctx) => {
     `📦 *Produk:* ${trx.products?.name}\n` +
     `💰 *Total:* Rp ${trx.amount.toLocaleString("id-ID")}`;
 
-  // 3. Kirim notifikasi foto ke admin
   try {
     if (adminId && adminId !== 0) {
       await ctx.api.sendPhoto(adminId, fileId, {
@@ -279,47 +253,11 @@ bot.on("message:photo", async (ctx) => {
         reply_markup: adminKeyboard,
       });
     } else {
-      console.error("ADMIN_ID belum diisi atau bernilai 0 di Environment Variables!");
+      console.error("ADMIN_ID belum terisi di Environment Variables!");
     }
   } catch (err: any) {
     console.error("Gagal mengirim bukti transfer ke admin:", err.message);
   }
-});
-
-  // Jika tidak ditemukan atau sudah terproses, abaikan langsung tanpa spam error
-  if (error || !trx) {
-    return;
-  }
-
-  const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-
-  // Kunci status transaksi terlebih dahulu menjadi MENUNGGU_ACC
-  const { error: updateErr } = await supabase
-    .from("transactions")
-    .update({ payment_proof_file_id: fileId, status: "MENUNGGU_ACC" })
-    .eq("id", trx.id)
-    .eq("status", "MENUNGGU_PEMBAYARAN"); // Double-check kondisi agar tidak dobel
-
-  if (updateErr) return;
-
-  await ctx.reply("✅ Bukti pembayaran berhasil diterima. Mohon tunggu verifikasi admin.");
-
-  const adminKeyboard = new InlineKeyboard()
-    .text("✅ Terima (ACC)", `acc_${trx.id}`)
-    .text("❌ Tolak", `reject_${trx.id}`);
-
-  const keteranganAdmin =
-    `🔔 *PESANAN MASUK!*\n\n` +
-    `🆔 *ID:* #TRX-${trx.id}\n` +
-    `👤 *Pembeli:* ${trx.user_name} (${trx.username})\n` +
-    `📦 *Produk:* ${trx.products?.name}\n` +
-    `💰 *Total:* Rp ${trx.amount.toLocaleString("id-ID")}`;
-
-  await ctx.api.sendPhoto(adminId, fileId, {
-    caption: keteranganAdmin,
-    parse_mode: "Markdown",
-    reply_markup: adminKeyboard,
-  });
 });
 
 // 6. ADMIN ACC (PENGIRIMAN FILE FORMAT SUPER RAW PER BARIS)
@@ -332,11 +270,10 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
     .single();
 
   if (trx && trx.status !== "SELESAI") {
-    // 1. Tandai transaksi telah selesai
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
     const jumlahBeli = (trx.amount % trx.products.price) || 1;
 
-    // 2. KHUSUS PRODUK BERKAS DIGITAL: Cookie Fresh (2), Cookie Bekas (3), FP (4)
+    // PRODUK BERKAS DIGITAL: Cookie Fresh (2), Cookie Bekas (3), FP (4)
     if (trx.product_id !== 1) {
       const { data: stockItems } = await supabase
         .from("product_stocks")
@@ -346,22 +283,19 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
         .limit(jumlahBeli);
 
       if (stockItems && stockItems.length > 0) {
-        // Tandai data terpakai di Supabase
         const itemIds = stockItems.map((item) => item.id);
         await supabase.from("product_stocks").update({ is_used: true }).in("id", itemIds);
 
-        // Kurangi stok di tabel products
         await supabase
           .from("products")
           .update({ stock: Math.max(0, trx.products.stock - stockItems.length) })
           .eq("id", trx.product_id);
 
-        // FORMAT SUPER RAW: Murni data akun dipisahkan baris baru tanpa embel-embel teks
+        // Format Super Raw: Murni per baris
         const isiTeksFile = stockItems.map((item) => item.account_data.trim()).join("\n");
         const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
         const namaFile = trx.products.name.replace(/\s+/g, "_");
 
-        // Detail transaksi tetap jelas dan lengkap di caption pesan Telegram
         const pesanPengiriman =
           `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
           `Pesanan *#TRX-${trx.id}* telah disetujui.\n` +
@@ -376,12 +310,12 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
       } else {
         await ctx.api.sendMessage(
           trx.user_id,
-          `🎉 *PEMBAYARAN DITERIMA!*\n\nPesanan *#TRX-${trx.id}* disetujui, namun stok otomatis sedang kosong. Admin akan segera mengirimkannya manual.`,
+          `🎉 *PEMBAYARAN DITERIMA!*\n\nPesanan *#TRX-${trx.id}* disetujui, namun stok otomatis kosong. Admin akan segera mengirimkannya manual.`,
           { parse_mode: "Markdown" }
         );
       }
     } 
-    // 3. KHUSUS PRODUK MANUAL: Slot Tumbal (ID 1)
+    // PRODUK MANUAL: Slot Tumbal (ID 1)
     else {
       if (trx.products.stock >= jumlahBeli) {
         await supabase
@@ -401,7 +335,6 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
       await ctx.api.sendMessage(trx.user_id, pesanManual, { parse_mode: "Markdown", reply_markup: customerKeyboard });
     }
 
-    // Ubah caption pada notifikasi bot admin
     await ctx.editMessageCaption({
       caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*`,
       parse_mode: "Markdown",
