@@ -7,7 +7,7 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const adminId = parseInt(process.env.ADMIN_ID || "0");
 
-const QRIS_IMAGE_URL = "https://haqwznpsrtojwyjkgigm.supabase.co/storage/v1/object/public/assets/qris.jpg";
+const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
 
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
