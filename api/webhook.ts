@@ -1,11 +1,11 @@
 import { Bot, InlineKeyboard, webhookCallback, InputFile } from "grammy";
 import { createClient } from "@supabase/supabase-js";
 
-// Inisialisasi Environment Variables
+// Inisialisasi Environment Variables & Konfigurasi
 const botToken = process.env.BOT_TOKEN || "";
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
-const adminId = parseInt(process.env.ADMIN_ID || "1294259168");
+const adminId = 1294259168;
 
 const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
 
@@ -37,7 +37,7 @@ function buatKeyboardBulk(prodId: number, qty: number, harga: number, stok: numb
   return keyboard;
 }
 
-// 1. MENU UTAMA (/start)
+// ==================== 1. MENU UTAMA (/start) ====================
 bot.command("start", async (ctx) => {
   const userId = ctx.from?.id;
   const userName = ctx.from?.first_name || "Pelanggan";
@@ -63,7 +63,7 @@ bot.command("start", async (ctx) => {
   );
 });
 
-// 2. KATALOG PRODUK
+// ==================== 2. KATALOG PRODUK ====================
 bot.callbackQuery("menu_beli", async (ctx) => {
   try {
     const { data: products, error } = await supabase
@@ -94,7 +94,7 @@ bot.callbackQuery("menu_beli", async (ctx) => {
   }
 });
 
-// 3. PILIH PRODUK -> TAMPILKAN COUNTER & SHORTCUT BULK
+// ==================== 3. PILIH PRODUK & COUNTER ====================
 bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   const prodId = parseInt(ctx.match[1]);
   const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
@@ -104,7 +104,7 @@ bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   }
 
   if (product.stock <= 0) {
-    const adminLink = adminId ? `tg://user?id=${adminId}` : "https://t.me";
+    const adminLink = `tg://user?id=${adminId}`;
     const pesanHabis = 
       `⚠️ *PEMBERITAHUAN*\n\n` +
       `Maaf, stok untuk *${product.name}* sedang habis!\n` +
@@ -154,7 +154,7 @@ bot.callbackQuery("noop", async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
-// 4. BUAT INVOICE PEMBAYARAN
+// ==================== 4. BUAT INVOICE & TOMBOL BATAL ====================
 bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   const productId = parseInt(ctx.match[1]);
   const jumlahBeli = parseInt(ctx.match[2]);
@@ -186,35 +186,64 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
 
   await ctx.deleteMessage();
 
-  const invoiceText =
+const invoiceText =
     `🧾 *INVOICE PEMBAYARAN #TRX-${trx.id}*\n\n` +
     `📦 Produk: *${product.name} (${jumlahBeli} item)*\n` +
     `💵 Harga Satuan: Rp ${product.price.toLocaleString("id-ID")}\n` +
     `🔢 Kode Unik: *+Rp ${kodeUnik}*\n` +
     `💰 *Total Tagihan: Rp ${totalTagihan.toLocaleString("id-ID")}*\n\n` +
+    `⏳ *Batas Waktu:* 5 Menit\n\n` +
     `⚠️ *PERHATIAN:*\n` +
     `Mohon transfer tepat hingga digit terakhir (*Rp ${totalTagihan.toLocaleString("id-ID")}*).\n\n` +
     `📌 *Instruksi:*\n` +
     `1. Scan QRIS di atas.\n` +
-    `2. Transfer sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}*.\n` +
+    `2. Transfer sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}* dalam 5 menit.\n` +
     `3. *Kirim screenshot bukti transfer langsung ke bot ini.*`;
+
+  // SARAN 1: Tambahkan tombol Batalkan Pesanan di bawah foto QRIS
+  const invoiceKeyboard = new InlineKeyboard()
+    .text("❌ Batalkan Pesanan", `batal_trx_${trx.id}`);
 
   await ctx.replyWithPhoto(QRIS_IMAGE_URL, {
     caption: invoiceText,
     parse_mode: "Markdown",
+    reply_markup: invoiceKeyboard,
   });
+});
+
+// SARAN 1: Handler Pembatalan Pesanan oleh Customer
+bot.callbackQuery(/^batal_trx_(\d+)$/, async (ctx) => {
+  const trxId = parseInt(ctx.match[1]);
+
+  // Update status transaksi menjadi BATAL jika statusnya masih MENUNGGU_PEMBAYARAN
+  await supabase
+    .from("transactions")
+    .update({ status: "BATAL" })
+    .eq("id", trxId)
+    .eq("user_id", ctx.from.id)
+    .eq("status", "MENUNGGU_PEMBAYARAN");
+
+  await ctx.deleteMessage();
+  await ctx.reply("❌ *Pesanan telah dibatalkan.* Gunakan /start jika ingin berbelanja kembali.", {
+    parse_mode: "Markdown",
+  });
+  await ctx.answerCallbackQuery({ text: "Pesanan dibatalkan." });
 });
 
 // ==================== 5. TERIMA BUKTI TRANSFER (FOTO) ====================
 bot.on("message:photo", async (ctx) => {
   const userId = ctx.from.id;
 
-  // 5.1. Ambil data transaksi yang statusnya MENUNGGU_PEMBAYARAN
+  // Filter hanya invoice yang dibuat dalam kurun waktu 5 menit terakhir
+  const waktuBatas = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+  // 5.1. Ambil transaksi aktif yang statusnya MENUNGGU_PEMBAYARAN
   const { data: trx, error } = await supabase
     .from("transactions")
     .select("*, products(*)")
     .eq("user_id", userId)
     .eq("status", "MENUNGGU_PEMBAYARAN")
+    .gte("created_at", waktuBatas)
     .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -240,7 +269,7 @@ bot.on("message:photo", async (ctx) => {
     .text("✅ Terima (ACC)", `acc_${trx.id}`)
     .text("❌ Tolak", `reject_${trx.id}`);
 
-  // Menggunakan HTML agar kebal dari username yang memakai garis bawah (_)
+  // Format HTML agar kebal dari username yang mengandung garis bawah (_)
   const namaPembeli = (trx.user_name || "User").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const usernamePembeli = (trx.username || "-").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const namaProduk = (trx.products?.name || "Produk").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -264,7 +293,7 @@ bot.on("message:photo", async (ctx) => {
     try {
       await ctx.api.sendMessage(
         adminId,
-        `${keteranganAdmin}\n\n⚠️ <i>(Foto tidak dapat diteruskan langsung, cek bukti di database)</i>`,
+        `${keteranganAdmin}\n\n⚠️ <i>(Foto tidak dapat diteruskan langsung, cek riwayat bukti di database)</i>`,
         {
           parse_mode: "HTML",
           reply_markup: adminKeyboard,
@@ -276,7 +305,7 @@ bot.on("message:photo", async (ctx) => {
   }
 });
 
-// 6. ADMIN ACC (PENGIRIMAN FILE FORMAT SUPER RAW PER BARIS)
+// ==================== 6. ADMIN ACC (SUPER RAW + LOW STOCK ALERT) ====================
 bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
   const { data: trx } = await supabase
@@ -302,10 +331,26 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
         const itemIds = stockItems.map((item) => item.id);
         await supabase.from("product_stocks").update({ is_used: true }).in("id", itemIds);
 
+        const sisaStokBaru = Math.max(0, trx.products.stock - stockItems.length);
         await supabase
           .from("products")
-          .update({ stock: Math.max(0, trx.products.stock - stockItems.length) })
+          .update({ stock: sisaStokBaru })
           .eq("id", trx.product_id);
+
+        // SARAN 3: Low Stock Alert ke Admin jika stok <= 3
+        if (sisaStokBaru <= 3) {
+          try {
+            await ctx.api.sendMessage(
+              adminId,
+              `⚠️ <b>PERINGATAN STOK MENIPIS!</b>\n\n` +
+              `Stok untuk produk <b>${trx.products.name}</b> tersisa <b>${sisaStokBaru} item</b>.\n` +
+              `Harap segera lakukan restock di Supabase!`,
+              { parse_mode: "HTML" }
+            );
+          } catch (err: any) {
+            console.error("Gagal kirim low stock alert:", err);
+          }
+        }
 
         // Format Super Raw: Murni per baris
         const isiTeksFile = stockItems.map((item) => item.account_data.trim()).join("\n");
@@ -333,11 +378,25 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
     } 
     // PRODUK MANUAL: Slot Tumbal (ID 1)
     else {
-      if (trx.products.stock >= jumlahBeli) {
-        await supabase
-          .from("products")
-          .update({ stock: trx.products.stock - jumlahBeli })
-          .eq("id", trx.product_id);
+      const sisaStokBaru = Math.max(0, trx.products.stock - jumlahBeli);
+      await supabase
+        .from("products")
+        .update({ stock: sisaStokBaru })
+        .eq("id", trx.product_id);
+
+      // SARAN 3: Low Stock Alert untuk Slot Tumbal
+      if (sisaStokBaru <= 3) {
+        try {
+          await ctx.api.sendMessage(
+            adminId,
+            `⚠️ <b>PERINGATAN STOK MENIPIS!</b>\n\n` +
+            `Stok untuk produk <b>${trx.products.name}</b> tersisa <b>${sisaStokBaru} slot</b>.\n` +
+            `Harap segera restock!`,
+            { parse_mode: "HTML" }
+          );
+        } catch (err: any) {
+          console.error("Gagal kirim low stock alert:", err);
+        }
       }
 
       const adminUsername = ctx.from?.username;
@@ -359,15 +418,53 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: "Pesanan diproses." });
 });
 
-// 7. ADMIN REJECT
+// ==================== 7. ADMIN REJECT (SARAN 2: NOTIFIKASI KE CUSTOMER) ====================
 bot.callbackQuery(/^reject_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
-  await supabase.from("transactions").update({ status: "DITOLAK" }).eq("id", trxId);
-  await ctx.api.sendMessage(adminId, `❌ Pesanan #TRX-${trxId} telah ditolak.`);
+
+  // Ambil detail transaksi sebelum mengubah status
+  const { data: trx } = await supabase
+    .from("transactions")
+    .select("*, products(*)")
+    .eq("id", trxId)
+    .single();
+
+  if (trx && trx.status !== "DITOLAK") {
+    await supabase.from("transactions").update({ status: "DITOLAK" }).eq("id", trxId);
+
+    // SARAN 2: Kirim pemberitahuan resmi ke chat pembeli
+    const adminUsername = ctx.from?.username;
+    const adminLink = adminUsername ? `https://t.me/${adminUsername}` : `tg://user?id=${adminId}`;
+    const keyboardTolak = new InlineKeyboard().url("💬 Hubungi Admin", adminLink);
+
+    const pesanTolak =
+      `❌ *PEMBAYARAN TIDAK DAPAT DIVERIFIKASI*\n\n` +
+      `Mohon maaf, pesanan *#TRX-${trx.id}* (${trx.products?.name}) telah ditolak oleh admin.\n\n` +
+      `*Kemungkinan penyebab:*\n` +
+      `1. Nominal transfer tidak sesuai dengan kode unik.\n` +
+      `2. Bukti transfer tidak jelas / mutasi belum masuk.\n\n` +
+      `Jika Anda merasa sudah mentransfer dengan benar, silakan hubungi admin di bawah ini:`;
+
+    try {
+      await ctx.api.sendMessage(trx.user_id, pesanTolak, {
+        parse_mode: "Markdown",
+        reply_markup: keyboardTolak,
+      });
+    } catch (err: any) {
+      console.error("Gagal mengirim notifikasi tolak ke pembeli:", err);
+    }
+
+    // Perbarui tampilan pesan di chat admin
+    await ctx.editMessageCaption({
+      caption: `❌ *PESANAN #TRX-${trxId} TELAH DITOLAK*`,
+      parse_mode: "Markdown",
+    });
+  }
+
   await ctx.answerCallbackQuery({ text: "Pesanan ditolak." });
 });
 
-// 8. MENU LAINNYA & BROADCAST
+// ==================== 8. MENU LAINNYA & BROADCAST ====================
 bot.command("broadcast", async (ctx) => {
   if (ctx.from?.id !== adminId) return;
   const pesan = ctx.match?.trim();
