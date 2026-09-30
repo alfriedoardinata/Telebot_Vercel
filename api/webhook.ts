@@ -225,18 +225,20 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
 });
 
 // 5. TERIMA BUKTI TRANSFER (FOTO) - DILENGKAPI PENCEGAH DOUBLE EXECUTION
-bot.on("message:photo", async (ctx) => {
-  const userId = ctx.from.id;
-
-  // Cari transaksi yang benar-benar masih menunggu pembayaran
-  const { data: trx, error } = await supabase
-    .from("transactions")
-    .select("*, products(*)")
-    .eq("user_id", userId)
-    .eq("status", "MENUNGGU_PEMBAYARAN")
-    .order("id", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+// Kirim notifikasi dan foto ke admin dengan penanganan error
+try {
+  if (adminId && adminId !== 0) {
+    await ctx.api.sendPhoto(adminId, fileId, {
+      caption: keteranganAdmin,
+      parse_mode: "Markdown",
+      reply_markup: adminKeyboard,
+    });
+  } else {
+    console.error("ADMIN_ID belum diisi atau bernilai 0 di Environment Variables!");
+  }
+} catch (err: any) {
+  console.error("Gagal mengirim bukti transfer ke admin:", err.message);
+}
 
   // Jika tidak ditemukan atau sudah terproses, abaikan langsung tanpa spam error
   if (error || !trx) {
