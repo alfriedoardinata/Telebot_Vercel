@@ -186,21 +186,20 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
 
   await ctx.deleteMessage();
 
-const invoiceText =
+  const invoiceText =
     `🧾 *INVOICE PEMBAYARAN #TRX-${trx.id}*\n\n` +
     `📦 Produk: *${product.name} (${jumlahBeli} item)*\n` +
     `💵 Harga Satuan: Rp ${product.price.toLocaleString("id-ID")}\n` +
     `🔢 Kode Unik: *+Rp ${kodeUnik}*\n` +
     `💰 *Total Tagihan: Rp ${totalTagihan.toLocaleString("id-ID")}*\n\n` +
     `⏳ *Batas Waktu:* 5 Menit\n\n` +
-    `⚠️ *PERHATIAN:*\n` +
+    `⚠️️ *PERHATIAN:*\n` +
     `Mohon transfer tepat hingga digit terakhir (*Rp ${totalTagihan.toLocaleString("id-ID")}*).\n\n` +
     `📌 *Instruksi:*\n` +
     `1. Scan QRIS di atas.\n` +
     `2. Transfer sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}* dalam 5 menit.\n` +
     `3. *Kirim screenshot bukti transfer langsung ke bot ini.*`;
 
-  // SARAN 1: Tambahkan tombol Batalkan Pesanan di bawah foto QRIS
   const invoiceKeyboard = new InlineKeyboard()
     .text("❌ Batalkan Pesanan", `batal_trx_${trx.id}`);
 
@@ -211,11 +210,10 @@ const invoiceText =
   });
 });
 
-// SARAN 1: Handler Pembatalan Pesanan oleh Customer
+// Handler Pembatalan Pesanan oleh Customer
 bot.callbackQuery(/^batal_trx_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
 
-  // Update status transaksi menjadi BATAL jika statusnya masih MENUNGGU_PEMBAYARAN
   await supabase
     .from("transactions")
     .update({ status: "BATAL" })
@@ -234,10 +232,10 @@ bot.callbackQuery(/^batal_trx_(\d+)$/, async (ctx) => {
 bot.on("message:photo", async (ctx) => {
   const userId = ctx.from.id;
 
-  // Filter hanya invoice yang dibuat dalam kurun waktu 5 menit terakhir
+  // Filter batas waktu 5 menit terakhir
   const waktuBatas = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-  // 5.1. Ambil transaksi aktif yang statusnya MENUNGGU_PEMBAYARAN
+  // 5.1. Ambil transaksi aktif
   const { data: trx, error } = await supabase
     .from("transactions")
     .select("*, products(*)")
@@ -254,7 +252,7 @@ bot.on("message:photo", async (ctx) => {
 
   const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
 
-  // 5.2. Kunci status transaksi menjadi MENUNGGU_ACC dan simpan file foto
+  // 5.2. Kunci status transaksi menjadi MENUNGGU_ACC
   const { error: updateErr } = await supabase
     .from("transactions")
     .update({ payment_proof_file_id: fileId, status: "MENUNGGU_ACC" })
@@ -269,7 +267,6 @@ bot.on("message:photo", async (ctx) => {
     .text("✅ Terima (ACC)", `acc_${trx.id}`)
     .text("❌ Tolak", `reject_${trx.id}`);
 
-  // Format HTML agar kebal dari username yang mengandung garis bawah (_)
   const namaPembeli = (trx.user_name || "User").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const usernamePembeli = (trx.username || "-").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const namaProduk = (trx.products?.name || "Produk").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -337,14 +334,13 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
           .update({ stock: sisaStokBaru })
           .eq("id", trx.product_id);
 
-        // SARAN 3: Low Stock Alert ke Admin jika stok <= 3
         if (sisaStokBaru <= 3) {
           try {
             await ctx.api.sendMessage(
               adminId,
               `⚠️ <b>PERINGATAN STOK MENIPIS!</b>\n\n` +
               `Stok untuk produk <b>${trx.products.name}</b> tersisa <b>${sisaStokBaru} item</b>.\n` +
-              `Harap segera lakukan restock di Supabase!`,
+              `Harap segera lakukan restock! (Gunakan /tambahstok)`,
               { parse_mode: "HTML" }
             );
           } catch (err: any) {
@@ -352,7 +348,6 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
           }
         }
 
-        // Format Super Raw: Murni per baris
         const isiTeksFile = stockItems.map((item) => item.account_data.trim()).join("\n");
         const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
         const namaFile = trx.products.name.replace(/\s+/g, "_");
@@ -384,14 +379,13 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
         .update({ stock: sisaStokBaru })
         .eq("id", trx.product_id);
 
-      // SARAN 3: Low Stock Alert untuk Slot Tumbal
       if (sisaStokBaru <= 3) {
         try {
           await ctx.api.sendMessage(
             adminId,
             `⚠️ <b>PERINGATAN STOK MENIPIS!</b>\n\n` +
             `Stok untuk produk <b>${trx.products.name}</b> tersisa <b>${sisaStokBaru} slot</b>.\n` +
-            `Harap segera restock!`,
+            `Harap segera restock! (Gunakan /tambahstok 1 <jumlah>)`,
             { parse_mode: "HTML" }
           );
         } catch (err: any) {
@@ -418,11 +412,10 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: "Pesanan diproses." });
 });
 
-// ==================== 7. ADMIN REJECT (SARAN 2: NOTIFIKASI KE CUSTOMER) ====================
+// ==================== 7. ADMIN REJECT ====================
 bot.callbackQuery(/^reject_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
 
-  // Ambil detail transaksi sebelum mengubah status
   const { data: trx } = await supabase
     .from("transactions")
     .select("*, products(*)")
@@ -432,7 +425,6 @@ bot.callbackQuery(/^reject_(\d+)$/, async (ctx) => {
   if (trx && trx.status !== "DITOLAK") {
     await supabase.from("transactions").update({ status: "DITOLAK" }).eq("id", trxId);
 
-    // SARAN 2: Kirim pemberitahuan resmi ke chat pembeli
     const adminUsername = ctx.from?.username;
     const adminLink = adminUsername ? `https://t.me/${adminUsername}` : `tg://user?id=${adminId}`;
     const keyboardTolak = new InlineKeyboard().url("💬 Hubungi Admin", adminLink);
@@ -454,7 +446,6 @@ bot.callbackQuery(/^reject_(\d+)$/, async (ctx) => {
       console.error("Gagal mengirim notifikasi tolak ke pembeli:", err);
     }
 
-    // Perbarui tampilan pesan di chat admin
     await ctx.editMessageCaption({
       caption: `❌ *PESANAN #TRX-${trxId} TELAH DITOLAK*`,
       parse_mode: "Markdown",
@@ -462,6 +453,106 @@ bot.callbackQuery(/^reject_(\d+)$/, async (ctx) => {
   }
 
   await ctx.answerCallbackQuery({ text: "Pesanan ditolak." });
+});
+
+// ==================== FITUR ADMIN: CEK STOK (/stok) ====================
+bot.command("stok", async (ctx) => {
+  if (ctx.from?.id !== adminId) return;
+
+  const { data: products, error } = await supabase
+    .from("products")
+    .select("*")
+    .order("id", { ascending: true });
+
+  if (error || !products) {
+    return ctx.reply("❌ Gagal mengambil data stok dari database.");
+  }
+
+  let text = `📊 <b>LAPORAN STOK TOKO SAAT INI</b>\n\n`;
+
+  products.forEach((p) => {
+    const warning = p.stock <= 3 ? " <i>(⚠️ Menipis!)</i>" : "";
+    text += `• <b>${p.name}</b> (ID:${p.id})\n`;
+    text += `  💰 Harga: Rp ${Number(p.price).toLocaleString("id-ID")}\n`;
+    text += `  📦 Stok: <b>${p.stock}</b>${warning}\n\n`;
+  });
+
+  text += `💡 <i>Gunakan /tambahstok untuk menambah stok langsung dari Telegram.</i>`;
+  await ctx.reply(text, { parse_mode: "HTML" });
+});
+
+// ==================== FITUR ADMIN: RESTOCK MASSAL (/tambahstok) ====================
+bot.command("tambahstok", async (ctx) => {
+  if (ctx.from?.id !== adminId) return;
+
+  const rawText = ctx.message?.text || "";
+  const lines = rawText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+
+  // Ambil baris pertama (misal: "/tambahstok 2" atau "/tambahstok 1 20")
+  const firstLineArgs = lines[0].split(" ").filter((s) => s.length > 0);
+  const prodId = parseInt(firstLineArgs[1]);
+
+  if (!prodId) {
+    const panduan =
+      `ℹ️ <b>PANDUAN RESTOCK MASSAL:</b>\n\n` +
+      `<b>1. Untuk Produk Berkas (ID 2: Cookie Fresh, 3: Cookie Bekas, 4: FP):</b>\n` +
+      `Kirim perintah berikut dengan data di baris bawahnya:\n` +
+      `<code>/tambahstok 2\n` +
+      `data_cookie_1\n` +
+      `data_cookie_2\n` +
+      `data_cookie_3</code>\n\n` +
+      `<b>2. Untuk Slot Tumbal (ID 1):</b>\n` +
+      `Cukup ketik ID dan jumlah tambahannya:\n` +
+      `<code>/tambahstok 1 20</code> (artinya tambah 20 slot)`;
+    return ctx.reply(panduan, { parse_mode: "HTML" });
+  }
+
+  const { data: product } = await supabase.from("products").select("*").eq("id", prodId).single();
+  if (!product) {
+    return ctx.reply(`❌ Produk dengan ID ${prodId} tidak ditemukan!`);
+  }
+
+  // JIKA PRODUK MANUAL (Slot Tumbal ID 1)
+  if (prodId === 1) {
+    const jumlahTambah = parseInt(firstLineArgs[2]);
+    if (!jumlahTambah || isNaN(jumlahTambah)) {
+      return ctx.reply("❌ Format salah untuk Slot Tumbal! Gunakan: `/tambahstok 1 <jumlah_angka>`\nContoh: `/tambahstok 1 25`", { parse_mode: "Markdown" });
+    }
+
+    const stokBaru = (product.stock || 0) + jumlahTambah;
+    await supabase.from("products").update({ stock: stokBaru }).eq("id", 1);
+
+    return ctx.reply(`✅ Berhasil menambahkan <b>${jumlahTambah} slot</b> ke <b>${product.name}</b>.\n📦 Total stok sekarang: <b>${stokBaru} slot</b>.`, { parse_mode: "HTML" });
+  }
+
+  // JIKA PRODUK BERKAS DIGITAL (Cookie Fresh, Cookie Bekas, FP)
+  const itemsToAdd = lines.slice(1); // Ambil baris ke-2 dst
+  if (itemsToAdd.length === 0) {
+    return ctx.reply("❌ Tidak ada data akun/cookie yang dimasukkan di bawah baris perintah!", { parse_mode: "HTML" });
+  }
+
+  const rows = itemsToAdd.map((dataString) => ({
+    product_id: prodId,
+    account_data: dataString,
+    is_used: false,
+  }));
+
+  const { error: insertErr } = await supabase.from("product_stocks").insert(rows);
+  if (insertErr) {
+    return ctx.reply(`❌ Gagal menyimpan data ke database: ${insertErr.message}`);
+  }
+
+  // Update total stok di tabel products
+  const totalStokBaru = (product.stock || 0) + itemsToAdd.length;
+  await supabase.from("products").update({ stock: totalStokBaru }).eq("id", prodId);
+
+  await ctx.reply(
+    `✅ <b>BERHASIL RESTOCK!</b>\n\n` +
+    `📦 Produk: <b>${product.name}</b>\n` +
+    `➕ Jumlah Baru Masuk: <b>${itemsToAdd.length} data</b>\n` +
+    `📊 Total Stok Sekarang: <b>${totalStokBaru} data</b>`,
+    { parse_mode: "HTML" }
+  );
 });
 
 // ==================== 8. MENU LAINNYA & BROADCAST ====================
@@ -518,7 +609,7 @@ bot.callbackQuery("menu_history", async (ctx) => {
     });
   }
 
-  const keyboard = new InlineKeyboard().text("⬅️️ Kembali", "back_to_menu");
+  const keyboard = new InlineKeyboard().text("⬅ Kembali", "back_to_menu");
   await ctx.editMessageText(riwayatText, { parse_mode: "Markdown", reply_markup: keyboard });
 });
 
