@@ -7,15 +7,67 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const adminId = 1294259168;
 
-const GOBIZ_TOKEN = process.env.GOBIZ_TOKEN || "";
+const GOBIZ_TOKEN = process.env.GOBIZ_TOKEN || "eyJhbGciOiJkaXIiLCJjdHkiOiJKV1QiLCJlbmMiOiJBMTI4R0NNIiwidHlwIjoiSldUIiwiemlwIjoiREVGIn0..J1-B62Rd2fW4dS1H.cb_lhRxcOust-stoafwrDr2GDRC2O7u6toGob9c14CRlN1AN2_xqcpwNs4kx4YBhsCmZuZ48dSN7hTOqYhFnfvnRa59_uK0seNY9ZFuzxuRPll24qu3TYZrX-SG9mIaZbmdq9pe3qTgVqoaC9wYWCoebMfVBsOZ26WumgNZIwlIj3BeqwBjwpXbvXQH0qQmMhQSNbGJk2nYW95G8MHJKL1NUB_VQGIxrxtkCjrQgOZCypkaaA5iyQSVQc6OOVYZ0Y0R3MiT5TTvXUNyJIPg9tXB1jbTFhyC9yEHta9rlBkcLiIsvsdpzgHFfHg1aou3LmHeSkrkwstMRwIXCOzI1YAkrBk3NtC3yAhtjsBc5hSmymJf7cLYv2mG2GVKWqg4cPoafhK1-iZf0km0rWjPy3hqEIW9vDZr1OE_P5ip0nNb_0U2EZa-abcYKRmyUCIKg1h0mYDC15sdMrjHFuX8DvCnRwXYbKtV3gB4eQwZkDq0nBTQ5NiFFyRa2oSDaqLy8G6z-LhfaKZ_tjTNA18lfzuyh6I4wWHRpvSnzz4kqOepqBJ1nhQ09UrrFD6oUV1He5Er-VINDAVYANh5-4GpXv49FMU5eaoqI217ii1ocxjbghEXnq5BTXZhvLOeMtGTt91cWqVA-v5QdG7GFhkbtgX5aTOvh0dVSx1Xt4ZnV2RTH4Es7BifMgZZX2QwxSJpUvHPvFWguZ83d_i8rlC5UEMQGoYFzm6I0FNeOobJCmHNKyVeVK5fj-bhJZWW-ZLzrMXC4Nv1GG8e4Ci3HjOpml6Rs9B2LaxKEtWRam73mASwHx_GeP8EKG5vKi7m_LGjdO_-oQiDyuErOm7z3I9Us42J26PNTUeL7qqFtxH3kH9azZrf2LMo9r9zCXQlNr4ATigsNaeyiald4CfCyNzRIo8jcSg-4dCLmfoNvMFrUs_XRHKKKwqTVSqoZsRcRGk5hIbKow1jhNZ7uqneqDDcwsf2x9heM3Mjq77807LZa3zUC-xnfiuChP5A5Qm_5eaM5f8-YuhKK6SvpzZfT2gIA-9NA8NbHmvfDZDxH4SQTXlW1Bp7YEvVFEQOyQwgw-xd6K6aLnxzw4fG5Q1GBRcc7oKPMbY_WWuNo429vRWMrUNexsUbhTayO-oPioGtU60Da7qTa0a4VvxisUUffJFcQ-zHRMG2NtXLqNH_T8Z9DCuztwvVsn6VzA5g4T6m8R2qftbjQjWBfrQayWfGVn6yTPia7FtP9J7QT3-SilaIJ87QUoI7pvltzsjaKGgqiY62eN-RxTKQfhzrrxWN_ozY4s_4-FSD9gVzq6sAe0vzaLWlHtqeNNy7EOf-IrOUDG7UIDpWnT1U84aDlJdZdGqwkS7UOvjA7Mx5T7NXJ0D-VPZfw0hYH2S9UG83A8xCxhPOUe9IrbxLwhC3bjcMEzL4wy2X5sN95BPgUPkJMA4zG8MXFST4UFV61rCp8zVsp0_Pz9OXT8LpSwqeCnt_j2wRIFaHdSg2PfBLSjaqX5yW1RAW5CjXJi8RLU5OJvqse5oC_ua47QUuegXc87it40wS4xxZeW53LaR6h7OP8Ut8m484MZIfbmLH5pSPC7o5hKLkBgsQPPCgn4cYVaZBT1Stc_1ccPCZk6VhmMgkPZuRMC0lZzQmzjSN0vqDPlsXzZB_4zlEcC9MQC6b8I7lwx-YCBBzXEQb6KEP5XLn1GslEAi-rWPt4qjgWMra8uNhIeJLtO_aLcOP-hPQh_FjitS8GSEXPUEYP75VzuBLW45O4bnFfDdPnJMzQdYEz2zxjcDu3kzm6pN8XviRe_4QXVg1E-HD7p8KtzzbHd01bdPQwxOdp5_qhZTA-vRlZplwrttuDOfJHBN8iKh_fOYHf0bFJ3dznxSavR_c_MPnHshkjGIdgNcIOwxpm1dX0bdQ0a3-TUbwKuOynSrMft8uusPrJRI5y66SbWPZzRiGOqqD1voGaHUru8zQBQXoQVQfog2C44SO31sOhXOOKfT2yE6oVmXXygQs5q-vBLAs-BPMMV0QkZiPg-FWLHZs_e7h--ss9k5vNDvT-Ai3D2L-b_sRy5a_l-xtUwXfskc7jca8g-zC__sDwYWE652PIWhNbUnki1Gj8WdgsKCU6T6V0nw2n-0v8rIjpaoOYo1pDH5WWmwvTlS8.o7zqi-GQ4FGJMx3jtXyC_A";
 const GOBIZ_MERCHANT_ID = process.env.GOBIZ_MERCHANT_ID || "G591782521";
-const QRIS_RAW_STRING = process.env.QRIS_RAW_STRING || "";
+const QRIS_RAW_STRING = process.env.QRIS_RAW_STRING || "00020101021126610014COM.GO-JEK.WWW01189360091435917825210210G5917825210303UMI51440014ID.CO.QRIS.WWW0215ID10254308911560303UMI5204594753033605802ID5925ALFRIEDO STORE , Toko Kad6012DELI SERDANG61052037162070703A016304FCD1";
 
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== HELPER QRIS DINAMIS & MUTASI ====================
-function generateDynamicQris(rawQris: string, nominal: number): string {
+async function cekMutasiGojek(nominal: number): Promise<boolean> {
+  if (!GOBIZ_TOKEN) {
+    console.error("GOBIZ_TOKEN belum diset di Environment Variables");
+    return false;
+  }
+
+  const endTime = new Date();
+  const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000); // Cari dalam 24 jam terakhir
+
+  const url =
+    "https://api.gojekapi.com/merchant-analytics/v2/merchants/transactions?from=0&size=20&statuses=SETTLEMENT,CAPTURE&payment_types=QRIS,GOPAY&start_time=" +
+    encodeURIComponent(startTime.toISOString()) +
+    "&end_time=" +
+    encodeURIComponent(endTime.toISOString()) +
+    "&merchant_ids=" +
+    GOBIZ_MERCHANT_ID;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer " + GOBIZ_TOKEN,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+
+    console.log("Status respons Gojek API:", res.status);
+
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error("Gagal fetch Gojek:", res.status, errorBody);
+      return false;
+    }
+
+    const json = await res.json();
+    const transactions = json.transactions || [];
+    console.log("Jumlah transaksi ditemukan:", transactions.length);
+
+    return transactions.some((t: any) => {
+      const gross = t.gross_amount / 100;
+      return (
+        (t.transaction_status === "SETTLEMENT" || t.transaction_status === "CAPTURE") &&
+        gross === nominal
+      );
+    });
+  } catch (err) {
+    console.error("Exception cek mutasi GoBiz:", err);
+    return false;
+  }
+}
   // 1. Bersihkan string dan potong 4 digit CRC lama di akhir
   let cleanQris = rawQris.trim();
   if (cleanQris.includes("6304")) {
@@ -359,6 +411,9 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
 bot.callbackQuery(/^cek_bayar_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
 
+  // Jawab pop-up instan agar tombol tidak macet/loading terus di HP
+  await ctx.answerCallbackQuery({ text: "🔍 Memeriksa mutasi..." });
+
   const { data: trx } = await supabase
     .from("transactions")
     .select("*, products(*)")
@@ -366,31 +421,30 @@ bot.callbackQuery(/^cek_bayar_(\d+)$/, async (ctx) => {
     .single();
 
   if (!trx) {
-    return ctx.answerCallbackQuery({ text: "Transaksi tidak ditemukan!", show_alert: true });
+    return ctx.reply("❌ Transaksi tidak ditemukan di database.");
   }
 
   if (trx.status === "SELESAI") {
-    return ctx.answerCallbackQuery({ text: "Transaksi ini sudah diselesaikan sebelumnya!", show_alert: true });
+    return ctx.reply("✅ Transaksi ini sudah diselesaikan sebelumnya.");
   }
 
   if (trx.status === "BATAL" || trx.status === "DITOLAK") {
-    return ctx.answerCallbackQuery({ text: "Pesanan ini sudah dibatalkan atau ditolak.", show_alert: true });
+    return ctx.reply("⚠️ Pesanan ini sudah dibatalkan atau ditolak.");
   }
-
-  await ctx.answerCallbackQuery({ text: "Memeriksa mutasi pembayaran..." });
 
   const isPaid = await cekMutasiGojek(trx.amount);
 
   if (isPaid) {
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trx.id);
-    await ctx.deleteMessage();
+    try {
+      await ctx.deleteMessage();
+    } catch {}
     await prosesPesananSelesai(trx, ctx.api);
   } else {
     await ctx.reply(
       "⚠️ <b>Pembayaran Belum Terdeteksi</b>\n\n" +
-      "Nominal: <b>Rp " + trx.amount.toLocaleString("id-ID") + "</b>\n" +
-      "Pastikan Anda sudah menyelesaikan transfer melalui aplikasi e-wallet / m-banking Anda, lalu tekan tombol <b>🔄 Cek Pembayaran</b> kembali dalam beberapa saat.\n\n" +
-      "<i>(Atau kirim foto screenshot bukti transfer ke bot jika Anda butuh verifikasi manual oleh Admin).</i>",
+      "Tagihan: <b>Rp " + trx.amount.toLocaleString("id-ID") + "</b>\n\n" +
+      "Sistem belum mendeteksi dana masuk. Jika baru saja transfer, mohon tunggu 15-30 detik lalu tekan kembali tombol <b>🔄 Cek Pembayaran</b>.",
       { parse_mode: "HTML" }
     );
   }
