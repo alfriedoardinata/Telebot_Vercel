@@ -7,12 +7,158 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const adminId = 1294259168;
 
-const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
+const GOBIZ_TOKEN = process.env.GOBIZ_TOKEN || "";
+const GOBIZ_MERCHANT_ID = process.env.GOBIZ_MERCHANT_ID || "G591782521";
+const QRIS_RAW_STRING = process.env.QRIS_RAW_STRING || "";
 
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ==================== HELPER KEYBOARD BULK (ANTI DELAY) ====================
+// ==================== HELPER QRIS DINAMIS & MUTASI ====================
+function generateDynamicQris(rawQris: string, nominal: number): string {
+  let qris = rawQris.slice(0, -4);
+  const step1 = qris.replace("010211", "010212");
+  const parts = step1.split("5802ID");
+
+  const nominalStr = nominal.toString();
+  const tag54 = `54${nominalStr.length.toString().padStart(2, "0")}${nominalStr}5802ID`;
+  const data = `${parts[0]}${tag54}${parts[1]}6304`;
+
+  let crc = 0xffff;
+  for (let c = 0; c < data.length; c++) {
+    crc ^= data.charCodeAt(c) << 8;
+    for (let i = 0; i < 8; i++) {
+      if (crc & 0x8000) crc = ((crc << 1) ^ 0x1021) & 0xffff;
+      else crc = (crc << 1) & 0xffff;
+    }
+  }
+  const hex = crc.toString(16).toUpperCase().padStart(4, "0");
+  return `${data}${hex}`;
+}
+
+async function cekMutasiGojek(nominal: number): Promise<boolean> {
+  if (!GOBIZ_TOKEN) {
+    console.error("GOBIZ_TOKEN belum diset di Environment Variables");
+    return false;
+  }
+
+  const endTime = new Date();
+  const startTime = new Date(endTime.getTime() - 60 * 60 * 1000); // 1 jam terakhir
+
+  const url = `https://api.gojekapi.com/merchant-analytics/v2/merchants/transactions?from=0&size=20&statuses=SETTLEMENT,CAPTURE&payment_types=QRIS,GOPAY&start_time=${startTime.toISOString()}&end_time=${endTime.toISOString()}&merchant_ids=${GOBIZ_MERCHANT_ID}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${GOBIZ_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      console.error("Gagal fetch mutasi Gojek, status:", res.status);
+      return false;
+    }
+
+    const json = await res.json();
+    const transactions = json.transactions || [];
+
+    return transactions.some((t: any) => {
+      const gross = t.gross_amount / 100;
+      return (
+        (t.transaction_status === "SETTLEMENT" || t.transaction_status === "CAPTURE") &&
+        gross === nominal
+      );
+    });
+  } catch (err) {
+    console.error("Error cek mutasi GoBiz:", err);
+    return false;
+  }
+}
+
+// Fungsi Pengiriman Item Sukses (Digunakan oleh Auto-Cek dan Admin Manual ACC)
+async function prosesPesananSelesai(trx: any, ctxApi: any) {
+  const jumlahBeli = (trx.amount % trx.products.price) || 1;
+
+  // PRODUK BERKAS DIGITAL: Cookie Fresh (2), Cookie Bekas (3), FP (4)
+  if (trx.product_id !== 1) {
+    const { data: stockItems } = await supabase
+      .from("product_stocks")
+      .select("*")
+      .eq("product_id", trx.product_id)
+      .eq("is_used", false)
+      .limit(jumlahBeli);
+
+    if (stockItems && stockItems.length > 0) {
+      const itemIds = stockItems.map((item) => item.id);
+      await supabase.from("product_stocks").update({ is_used: true }).in("id", itemIds);
+
+      const sisaStokBaru = Math.max(0, trx.products.stock - stockItems.length);
+      await supabase.from("products").update({ stock: sisaStokBaru }).eq("id", trx.product_id);
+
+      if (sisaStokBaru <= 3) {
+        try {
+          await ctxApi.sendMessage(
+            adminId,
+            `⚠️ <b>PERINGATAN STOK MENIPIS!</b>\n\nStok untuk produk <b>${trx.products.name}</b> tersisa <b>${sisaStokBaru} item</b>.`,
+            { parse_mode: "HTML" }
+          );
+        } catch {}
+      }
+
+      const isiTeksFile = stockItems.map((item) => item.account_data.trim()).join("\n");
+      const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
+      const namaFile = trx.products.name.replace(/\s+/g, "_");
+
+      const pesanPengiriman =
+        `🎉 <b>PEMBAYARAN DITERIMA!</b>\n\n` +
+        `Pesanan <b>#TRX-${trx.id}</b> telah diverifikasi lunas secara otomatis.\n` +
+        `📦 Produk: <b>${trx.products.name} (${stockItems.length} item)</b>\n\n` +
+        `✅ File <b>.txt</b> terlampir di bawah (format raw per baris).`;
+
+      await ctxApi.sendDocument(
+        trx.user_id,
+        new InputFile(fileBuffer, `${namaFile}_TRX${trx.id}.txt`),
+        { caption: pesanPengiriman, parse_mode: "HTML" }
+      );
+    } else {
+      await ctxApi.sendMessage(
+        trx.user_id,
+        `🎉 <b>PEMBAYARAN DITERIMA!</b>\nPesanan <b>#TRX-${trx.id}</b> telah lunas, namun stok otomatis sedang habis. Admin akan segera mengirimkannya manual.`,
+        { parse_mode: "HTML" }
+      );
+    }
+  } 
+  // PRODUK MANUAL: Slot Tumbal (ID 1)
+  else {
+    const sisaStokBaru = Math.max(0, trx.products.stock - jumlahBeli);
+    await supabase.from("products").update({ stock: sisaStokBaru }).eq("id", trx.product_id);
+
+    const adminLink = `tg://user?id=${adminId}`;
+    const pesanManual = 
+      `🎉 <b>PEMBAYARAN DITERIMA!</b>\n\n` +
+      `Pesanan <b>#TRX-${trx.id}</b> telah diverifikasi lunas secara otomatis.\n\n` +
+      `Silakan konfirmasi akun Anda ke Admin sekarang:`;
+
+    const customerKeyboard = new InlineKeyboard().url("💬 Chat Admin (Klaim Slot)", adminLink);
+    await ctxApi.sendMessage(trx.user_id, pesanManual, { parse_mode: "HTML", reply_markup: customerKeyboard });
+  }
+
+  // Notifikasi ke Admin
+  try {
+    await ctxApi.sendMessage(
+      adminId,
+      `💰 <b>PEMBAYARAN OTOMATIS LUNAS!</b>\n\n` +
+      `🆔 <b>ID:</b> #TRX-${trx.id}\n` +
+      `👤 <b>Pembeli:</b> ${trx.user_name \vert{}\vert{} "User"} (${trx.username || "-"})\n` +
+      `📦 <b>Produk:</b> ${trx.products.name}\n` +
+      `💵 <b>Nominal:</b> Rp ${trx.amount.toLocaleString("id-ID")}`,
+      { parse_mode: "HTML" }
+    );
+  } catch {}
+}
+
+// ==================== HELPER KEYBOARD BULK ====================
 function buatKeyboardBulk(prodId: number, qty: number, harga: number, stok: number) {
   const totalHarga = qty * harga;
   const keyboard = new InlineKeyboard();
@@ -137,7 +283,6 @@ bot.callbackQuery(/^pilih_prod_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
-// Handler Penyesuaian Jumlah Bulk (Zero Database Call)
 bot.callbackQuery(/^bulk_adj_(\d+)_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
   const prodId = parseInt(ctx.match[1]);
   const newQty = parseInt(ctx.match[2]);
@@ -154,7 +299,7 @@ bot.callbackQuery("noop", async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
-// ==================== 4. BUAT INVOICE & TOMBOL BATAL ====================
+// ==================== 4. BUAT INVOICE & GENERATE QRIS DINAMIS ====================
 bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   const productId = parseInt(ctx.match[1]);
   const jumlahBeli = parseInt(ctx.match[2]);
@@ -186,28 +331,80 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
 
   await ctx.deleteMessage();
 
+  // Generate QRIS Dinamis & URL Gambar Barcode
+  let qrImageUrl = "";
+  if (QRIS_RAW_STRING) {
+    const dynamicQrisPayload = generateDynamicQris(QRIS_RAW_STRING, totalTagihan);
+    qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(dynamicQrisPayload)}`;
+  } else {
+    // Fallback jika belum mengisi QRIS_RAW_STRING
+    qrImageUrl = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
+  }
+
   const invoiceText =
-    `🧾 *INVOICE PEMBAYARAN #TRX-${trx.id}*\n\n` +
-    `📦 Produk: *${product.name} (${jumlahBeli} item)*\n` +
-    `💵 Harga Satuan: Rp ${product.price.toLocaleString("id-ID")}\n` +
-    `🔢 Kode Unik: *+Rp ${kodeUnik}*\n` +
-    `💰 *Total Tagihan: Rp ${totalTagihan.toLocaleString("id-ID")}*\n\n` +
-    `⏳ *Batas Waktu:* 5 Menit\n\n` +
-    `⚠️️ *PERHATIAN:*\n` +
-    `Mohon transfer tepat hingga digit terakhir (*Rp ${totalTagihan.toLocaleString("id-ID")}*).\n\n` +
-    `📌 *Instruksi:*\n` +
-    `1. Scan QRIS di atas.\n` +
-    `2. Transfer sejumlah *Rp ${totalTagihan.toLocaleString("id-ID")}* dalam 5 menit.\n` +
-    `3. *Kirim screenshot bukti transfer langsung ke bot ini.*`;
+    `🧾 <b>INVOICE PEMBAYARAN #TRX-${trx.id}</b>\n\n` +
+    `📦 Produk: <b>${product.name} (${jumlahBeli} item)</b>\n` +
+    `💵 Total Tagihan: <b>Rp ${totalTagihan.toLocaleString("id-ID")}</b>\n` +
+    `⏳ Batas Waktu: <b>5 Menit</b>\n\n` +
+    `📌 <b>CARA BAYAR (OTOMATIS):</b>\n` +
+    `1. Scan QRIS di atas menggunakan GoPay, DANA, BCA, OVO, ShopeePay, dll.\n` +
+    `2. Nominal sudah otomatis terkunci (tidak perlu ketik manual).\n` +
+    `3. Setelah transfer berhasil, klik tombol <b>🔄 Cek Pembayaran</b> di bawah!`;
 
   const invoiceKeyboard = new InlineKeyboard()
+    .text("🔄 Cek Pembayaran", `cek_bayar_${trx.id}`).row()
     .text("❌ Batalkan Pesanan", `batal_trx_${trx.id}`);
 
-  await ctx.replyWithPhoto(QRIS_IMAGE_URL, {
+  await ctx.replyWithPhoto(qrImageUrl, {
     caption: invoiceText,
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     reply_markup: invoiceKeyboard,
   });
+});
+
+// ==================== HANDLER: CEK PEMBAYARAN OTOMATIS ====================
+bot.callbackQuery(/^cek_bayar_(\d+)$/, async (ctx) => {
+  const trxId = parseInt(ctx.match[1]);
+
+  const { data: trx } = await supabase
+    .from("transactions")
+    .select("*, products(*)")
+    .eq("id", trxId)
+    .single();
+
+  if (!trx) {
+    return ctx.answerCallbackQuery({ text: "Transaksi tidak ditemukan!", show_alert: true });
+  }
+
+  if (trx.status === "SELESAI") {
+    return ctx.answerCallbackQuery({ text: "Transaksi ini sudah diselesaikan sebelumnya!", show_alert: true });
+  }
+
+  if (trx.status === "BATAL" || trx.status === "DITOLAK") {
+    return ctx.answerCallbackQuery({ text: "Pesanan ini sudah dibatalkan atau ditolak.", show_alert: true });
+  }
+
+  await ctx.answerCallbackQuery({ text: "Memeriksa mutasi pembayaran..." });
+
+  // Panggil API Mutasi Gojek
+  const isPaid = await cekMutasiGojek(trx.amount);
+
+  if (isPaid) {
+    // Tandai selesai di database
+    await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trx.id);
+    await ctx.deleteMessage();
+
+    // Jalankan pengiriman pesanan instan
+    await prosesPesananSelesai(trx, ctx.api);
+  } else {
+    await ctx.reply(
+      `⚠️ <b>Pembayaran Belum Terdeteksi</b>\n\n` +
+      `Nominal: <b>Rp ${trx.amount.toLocaleString("id-ID")}</b>\n` +
+      `Pastikan Anda sudah menyelesaikan transfer melalui aplikasi e-wallet / m-banking Anda, lalu tekan tombol <b>🔄 Cek Pembayaran</b> kembali dalam beberapa saat.\n\n` +
+      `<i>(Atau kirim foto screenshot bukti transfer ke bot jika Anda butuh verifikasi manual oleh Admin).</i>`,
+      { parse_mode: "HTML" }
+    );
+  }
 });
 
 // Handler Pembatalan Pesanan oleh Customer
@@ -222,20 +419,17 @@ bot.callbackQuery(/^batal_trx_(\d+)$/, async (ctx) => {
     .eq("status", "MENUNGGU_PEMBAYARAN");
 
   await ctx.deleteMessage();
-  await ctx.reply("❌ *Pesanan telah dibatalkan.* Gunakan /start jika ingin berbelanja kembali.", {
-    parse_mode: "Markdown",
+  await ctx.reply("❌ <b>Pesanan telah dibatalkan.</b> Gunakan /start jika ingin berbelanja kembali.", {
+    parse_mode: "HTML",
   });
   await ctx.answerCallbackQuery({ text: "Pesanan dibatalkan." });
 });
 
-// ==================== 5. TERIMA BUKTI TRANSFER (FOTO) ====================
+// ==================== 5. TERIMA BUKTI TRANSFER (FALLBACK MANUAL FOTO) ====================
 bot.on("message:photo", async (ctx) => {
   const userId = ctx.from.id;
-
-  // Filter batas waktu 5 menit terakhir
   const waktuBatas = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-  // 5.1. Ambil transaksi aktif
   const { data: trx, error } = await supabase
     .from("transactions")
     .select("*, products(*)")
@@ -246,13 +440,10 @@ bot.on("message:photo", async (ctx) => {
     .limit(1)
     .maybeSingle();
 
-  if (error || !trx) {
-    return;
-  }
+  if (error || !trx) return;
 
   const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
 
-  // 5.2. Kunci status transaksi menjadi MENUNGGU_ACC
   const { error: updateErr } = await supabase
     .from("transactions")
     .update({ payment_proof_file_id: fileId, status: "MENUNGGU_ACC" })
@@ -272,13 +463,12 @@ bot.on("message:photo", async (ctx) => {
   const namaProduk = (trx.products?.name || "Produk").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   const keteranganAdmin =
-    `🔔 <b>PESANAN MASUK!</b>\n\n` +
+    `🔔 <b>PESANAN MASUK (MANUAL FOTO)!</b>\n\n` +
     `🆔 <b>ID:</b> #TRX-${trx.id}\n` +
     `👤 <b>Pembeli:</b> ${namaPembeli} (${usernamePembeli})\n` +
     `📦 <b>Produk:</b> ${namaProduk}\n` +
     `💰 <b>Total:</b> Rp ${trx.amount.toLocaleString("id-ID")}`;
 
-  // 5.3. Kirim notifikasi foto ke akun admin
   try {
     await ctx.api.sendPhoto(adminId, fileId, {
       caption: keteranganAdmin,
@@ -286,23 +476,16 @@ bot.on("message:photo", async (ctx) => {
       reply_markup: adminKeyboard,
     });
   } catch (err: any) {
-    console.error("Gagal mengirim foto ke admin, beralih ke teks:", err);
     try {
-      await ctx.api.sendMessage(
-        adminId,
-        `${keteranganAdmin}\n\n⚠️ <i>(Foto tidak dapat diteruskan langsung, cek riwayat bukti di database)</i>`,
-        {
-          parse_mode: "HTML",
-          reply_markup: adminKeyboard,
-        }
-      );
-    } catch (innerErr: any) {
-      console.error("Gagal total kirim ke admin:", innerErr);
-    }
+      await ctx.api.sendMessage(adminId, `${keteranganAdmin}\n\n⚠️ <i>(Cek riwayat bukti foto di database)</i>`, {
+        parse_mode: "HTML",
+        reply_markup: adminKeyboard,
+      });
+    } catch {}
   }
 });
 
-// ==================== 6. ADMIN ACC (SUPER RAW + LOW STOCK ALERT) ====================
+// ==================== 6. ADMIN ACC MANUAL ====================
 bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
   const { data: trx } = await supabase
@@ -313,100 +496,11 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
 
   if (trx && trx.status !== "SELESAI") {
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
-    const jumlahBeli = (trx.amount % trx.products.price) || 1;
-
-    // PRODUK BERKAS DIGITAL: Cookie Fresh (2), Cookie Bekas (3), FP (4)
-    if (trx.product_id !== 1) {
-      const { data: stockItems } = await supabase
-        .from("product_stocks")
-        .select("*")
-        .eq("product_id", trx.product_id)
-        .eq("is_used", false)
-        .limit(jumlahBeli);
-
-      if (stockItems && stockItems.length > 0) {
-        const itemIds = stockItems.map((item) => item.id);
-        await supabase.from("product_stocks").update({ is_used: true }).in("id", itemIds);
-
-        const sisaStokBaru = Math.max(0, trx.products.stock - stockItems.length);
-        await supabase
-          .from("products")
-          .update({ stock: sisaStokBaru })
-          .eq("id", trx.product_id);
-
-        if (sisaStokBaru <= 3) {
-          try {
-            await ctx.api.sendMessage(
-              adminId,
-              `⚠️ <b>PERINGATAN STOK MENIPIS!</b>\n\n` +
-              `Stok untuk produk <b>${trx.products.name}</b> tersisa <b>${sisaStokBaru} item</b>.\n` +
-              `Harap segera lakukan restock! (Gunakan /tambahstok)`,
-              { parse_mode: "HTML" }
-            );
-          } catch (err: any) {
-            console.error("Gagal kirim low stock alert:", err);
-          }
-        }
-
-        const isiTeksFile = stockItems.map((item) => item.account_data.trim()).join("\n");
-        const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
-        const namaFile = trx.products.name.replace(/\s+/g, "_");
-
-        const pesanPengiriman =
-          `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
-          `Pesanan *#TRX-${trx.id}* telah disetujui.\n` +
-          `📦 Produk: *${trx.products.name} (${stockItems.length} item)*\n\n` +
-          `✅ File *.txt* terlampir di bawah (format raw per baris, siap import/pakai).`;
-
-        await ctx.api.sendDocument(
-          trx.user_id,
-          new InputFile(fileBuffer, `${namaFile}_TRX${trx.id}.txt`),
-          { caption: pesanPengiriman, parse_mode: "Markdown" }
-        );
-      } else {
-        await ctx.api.sendMessage(
-          trx.user_id,
-          `🎉 *PEMBAYARAN DITERIMA!*\n\nPesanan *#TRX-${trx.id}* disetujui, namun stok otomatis kosong. Admin akan segera mengirimkannya manual.`,
-          { parse_mode: "Markdown" }
-        );
-      }
-    } 
-    // PRODUK MANUAL: Slot Tumbal (ID 1)
-    else {
-      const sisaStokBaru = Math.max(0, trx.products.stock - jumlahBeli);
-      await supabase
-        .from("products")
-        .update({ stock: sisaStokBaru })
-        .eq("id", trx.product_id);
-
-      if (sisaStokBaru <= 3) {
-        try {
-          await ctx.api.sendMessage(
-            adminId,
-            `⚠️ <b>PERINGATAN STOK MENIPIS!</b>\n\n` +
-            `Stok untuk produk <b>${trx.products.name}</b> tersisa <b>${sisaStokBaru} slot</b>.\n` +
-            `Harap segera restock! (Gunakan /tambahstok 1 <jumlah>)`,
-            { parse_mode: "HTML" }
-          );
-        } catch (err: any) {
-          console.error("Gagal kirim low stock alert:", err);
-        }
-      }
-
-      const adminUsername = ctx.from?.username;
-      const adminLink = adminUsername ? `https://t.me/${adminUsername}` : `tg://user?id=${adminId}`;
-      const pesanManual = 
-        `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
-        `Pesanan *#TRX-${trx.id}* telah diverifikasi.\n\n` +
-        `Silahkan konfirmasi akun ke [Saya](${adminLink})`;
-
-      const customerKeyboard = new InlineKeyboard().url("💬 Chat Admin (Klaim Akun)", adminLink);
-      await ctx.api.sendMessage(trx.user_id, pesanManual, { parse_mode: "Markdown", reply_markup: customerKeyboard });
-    }
+    await prosesPesananSelesai(trx, ctx.api);
 
     await ctx.editMessageCaption({
-      caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*`,
-      parse_mode: "Markdown",
+      caption: `✅ <b>PESANAN #TRX-${trx.id} TELAH DI-ACC MANUAL</b>`,
+      parse_mode: "HTML",
     });
   }
   await ctx.answerCallbackQuery({ text: "Pesanan diproses." });
@@ -430,25 +524,20 @@ bot.callbackQuery(/^reject_(\d+)$/, async (ctx) => {
     const keyboardTolak = new InlineKeyboard().url("💬 Hubungi Admin", adminLink);
 
     const pesanTolak =
-      `❌ *PEMBAYARAN TIDAK DAPAT DIVERIFIKASI*\n\n` +
-      `Mohon maaf, pesanan *#TRX-${trx.id}* (${trx.products?.name}) telah ditolak oleh admin.\n\n` +
-      `*Kemungkinan penyebab:*\n` +
-      `1. Nominal transfer tidak sesuai dengan kode unik.\n` +
-      `2. Bukti transfer tidak jelas / mutasi belum masuk.\n\n` +
+      `❌ <b>PEMBAYARAN TIDAK DAPAT DIVERIFIKASI</b>\n\n` +
+      `Mohon maaf, pesanan <b>#TRX-${trx.id}</b> (${trx.products?.name}) telah ditolak oleh admin.\n\n` +
       `Jika Anda merasa sudah mentransfer dengan benar, silakan hubungi admin di bawah ini:`;
 
     try {
       await ctx.api.sendMessage(trx.user_id, pesanTolak, {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         reply_markup: keyboardTolak,
       });
-    } catch (err: any) {
-      console.error("Gagal mengirim notifikasi tolak ke pembeli:", err);
-    }
+    } catch {}
 
     await ctx.editMessageCaption({
-      caption: `❌ *PESANAN #TRX-${trxId} TELAH DITOLAK*`,
-      parse_mode: "Markdown",
+      caption: `❌ <b>PESANAN #TRX-${trxId} TELAH DITOLAK</b>`,
+      parse_mode: "HTML",
     });
   }
 
@@ -469,7 +558,6 @@ bot.command("stok", async (ctx) => {
   }
 
   let text = `📊 <b>LAPORAN STOK TOKO SAAT INI</b>\n\n`;
-
   products.forEach((p) => {
     const warning = p.stock <= 3 ? " <i>(⚠️ Menipis!)</i>" : "";
     text += `• <b>${p.name}</b> (ID:${p.id})\n`;
@@ -488,7 +576,6 @@ bot.command("tambahstok", async (ctx) => {
   const rawText = ctx.message?.text || "";
   const lines = rawText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
 
-  // Ambil baris pertama (misal: "/tambahstok 2" atau "/tambahstok 1 20")
   const firstLineArgs = lines[0].split(" ").filter((s) => s.length > 0);
   const prodId = parseInt(firstLineArgs[1]);
 
@@ -499,11 +586,9 @@ bot.command("tambahstok", async (ctx) => {
       `Kirim perintah berikut dengan data di baris bawahnya:\n` +
       `<code>/tambahstok 2\n` +
       `data_cookie_1\n` +
-      `data_cookie_2\n` +
-      `data_cookie_3</code>\n\n` +
+      `data_cookie_2</code>\n\n` +
       `<b>2. Untuk Slot Tumbal (ID 1):</b>\n` +
-      `Cukup ketik ID dan jumlah tambahannya:\n` +
-      `<code>/tambahstok 1 20</code> (artinya tambah 20 slot)`;
+      `<code>/tambahstok 1 20</code> (tambah 20 slot)`;
     return ctx.reply(panduan, { parse_mode: "HTML" });
   }
 
@@ -512,21 +597,18 @@ bot.command("tambahstok", async (ctx) => {
     return ctx.reply(`❌ Produk dengan ID ${prodId} tidak ditemukan!`);
   }
 
-  // JIKA PRODUK MANUAL (Slot Tumbal ID 1)
   if (prodId === 1) {
     const jumlahTambah = parseInt(firstLineArgs[2]);
     if (!jumlahTambah || isNaN(jumlahTambah)) {
-      return ctx.reply("❌ Format salah untuk Slot Tumbal! Gunakan: `/tambahstok 1 <jumlah_angka>`\nContoh: `/tambahstok 1 25`", { parse_mode: "Markdown" });
+      return ctx.reply("❌ Format salah untuk Slot Tumbal! Gunakan: `/tambahstok 1 <jumlah_angka>`", { parse_mode: "Markdown" });
     }
 
     const stokBaru = (product.stock || 0) + jumlahTambah;
     await supabase.from("products").update({ stock: stokBaru }).eq("id", 1);
-
     return ctx.reply(`✅ Berhasil menambahkan <b>${jumlahTambah} slot</b> ke <b>${product.name}</b>.\n📦 Total stok sekarang: <b>${stokBaru} slot</b>.`, { parse_mode: "HTML" });
   }
 
-  // JIKA PRODUK BERKAS DIGITAL (Cookie Fresh, Cookie Bekas, FP)
-  const itemsToAdd = lines.slice(1); // Ambil baris ke-2 dst
+  const itemsToAdd = lines.slice(1);
   if (itemsToAdd.length === 0) {
     return ctx.reply("❌ Tidak ada data akun/cookie yang dimasukkan di bawah baris perintah!", { parse_mode: "HTML" });
   }
@@ -539,10 +621,9 @@ bot.command("tambahstok", async (ctx) => {
 
   const { error: insertErr } = await supabase.from("product_stocks").insert(rows);
   if (insertErr) {
-    return ctx.reply(`❌ Gagal menyimpan data ke database: ${insertErr.message}`);
+    return ctx.reply(`❌ Gagal menyimpan data: ${insertErr.message}`);
   }
 
-  // Update total stok di tabel products
   const totalStokBaru = (product.stock || 0) + itemsToAdd.length;
   await supabase.from("products").update({ stock: totalStokBaru }).eq("id", prodId);
 
@@ -555,18 +636,15 @@ bot.command("tambahstok", async (ctx) => {
   );
 });
 
-// ==================== 8. MENU LAINNYA & BROADCAST ====================
-// ==================== FITUR ADMIN: MONITOR & BERSIHKAN DATABASE (/bersihkan) ====================
+// ==================== FITUR ADMIN: BERSIHKAN DATABASE (/bersihkan) ====================
 bot.command("bersihkan", async (ctx) => {
   if (ctx.from?.id !== adminId) return;
 
-  // 1. Hitung transaksi gagal / batal / ditolak
   const { count: countTrxSampah, error: errTrx } = await supabase
     .from("transactions")
     .select("*", { count: "exact", head: true })
     .in("status", ["BATAL", "DITOLAK"]);
 
-  // 2. Hitung data stok lama yang sudah digunakan
   const { count: countStokBekas, error: errStok } = await supabase
     .from("product_stocks")
     .select("*", { count: "exact", head: true })
@@ -577,17 +655,15 @@ bot.command("bersihkan", async (ctx) => {
   }
 
   const totalSampah = (countTrxSampah || 0) + (countStokBekas || 0);
-
   if (totalSampah === 0) {
-    return ctx.reply("✨ <b>Database Bersih!</b>\nTidak ada transaksi sampah atau data stok bekas yang perlu dibersihkan.", { parse_mode: "HTML" });
+    return ctx.reply("✨ <b>Database Bersih!</b>\nTidak ada sampah yang perlu dibersihkan.", { parse_mode: "HTML" });
   }
 
   const teksPeringatan =
     `🧹 <b>ANALISIS SAMPAH DATABASE</b>\n\n` +
     `• Transaksi Batal/Ditolak: <b>${countTrxSampah || 0} baris</b>\n` +
-    `• Stok Akun/Cookie Terpakai: <b>${countStokBekas || 0} baris</b>\n\n` +
-    `⚠️ <i>Data transaksi sukses/selesai dan stok aktif TIDAK AKAN dihapus.</i>\n\n` +
-    `Apakah Anda ingin menghapus data sampah di atas untuk menghemat ruang?`;
+    `• Stok Terpakai: <b>${countStokBekas || 0} baris</b>\n\n` +
+    `Apakah Anda ingin menghapus data sampah di atas?`;
 
   const keyboardBersih = new InlineKeyboard()
     .text("🗑 Hapus Sekarang", "eksekusi_bersihkan_db")
@@ -596,31 +672,22 @@ bot.command("bersihkan", async (ctx) => {
   await ctx.reply(teksPeringatan, { parse_mode: "HTML", reply_markup: keyboardBersih });
 });
 
-// Handler Konfirmasi Eksekusi Pembersihan
 bot.callbackQuery("eksekusi_bersihkan_db", async (ctx) => {
   if (ctx.from?.id !== adminId) return;
-
-  // Hapus transaksi BATAL dan DITOLAK
   await supabase.from("transactions").delete().in("status", ["BATAL", "DITOLAK"]);
-
-  // Hapus data stok yang sudah terpakai
   await supabase.from("product_stocks").delete().eq("is_used", true);
 
-  await ctx.editMessageText(
-    `✅ <b>PEMBERSIHAN BERHASIL!</b>\n\n` +
-    `Semua riwayat transaksi batal/ditolak dan stok berkas yang sudah terpakai berhasil dibersihkan dari Supabase.\n` +
-    `Ruang penyimpanan database Anda kini lebih optimal.`,
-    { parse_mode: "HTML" }
-  );
-  await ctx.answerCallbackQuery({ text: "Database berhasil dibersihkan!" });
+  await ctx.editMessageText("✅ <b>PEMBERSIHAN BERHASIL!</b>\nData sampah berhasil dihapus.", { parse_mode: "HTML" });
+  await ctx.answerCallbackQuery({ text: "Database dibersihkan!" });
 });
 
 bot.callbackQuery("batal_bersihkan_db", async (ctx) => {
   if (ctx.from?.id !== adminId) return;
-  await ctx.editMessageText("❌ Pembersihan database dibatalkan.");
+  await ctx.editMessageText("❌ Pembersihan dibatalkan.");
   await ctx.answerCallbackQuery();
 });
 
+// ==================== 8. MENU LAINNYA & BROADCAST ====================
 bot.command("broadcast", async (ctx) => {
   if (ctx.from?.id !== adminId) return;
   const pesan = ctx.match?.trim();
