@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 const botToken = process.env.BOT_TOKEN || "";
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
-const adminId = 8656590789(process.env.ADMIN_ID || "0");
+const adminId = parseInt(process.env.ADMIN_ID || "6639037080");
 
 const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
 
@@ -416,7 +416,7 @@ bot.callbackQuery("menu_history", async (ctx) => {
     });
   }
 
-  const keyboard = new InlineKeyboard().text("⬅️ Kembali", "back_to_menu");
+  const keyboard = new InlineKeyboard().text("⬅️️ Kembali", "back_to_menu");
   await ctx.editMessageText(riwayatText, { parse_mode: "Markdown", reply_markup: keyboard });
 });
 
