@@ -16,71 +16,45 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== HELPER QRIS DINAMIS & MUTASI ====================
 function generateDynamicQris(rawQris: string, nominal: number): string {
-  let qris = rawQris.slice(0, -4);
-  const step1 = qris.replace("010211", "010212");
-  const parts = step1.split("5802ID");
+  // 1. Bersihkan string dan potong 4 digit CRC lama di akhir
+  let cleanQris = rawQris.trim();
+  if (cleanQris.includes("6304")) {
+    cleanQris = cleanQris.substring(0, cleanQris.lastIndexOf("6304"));
+  }
 
+  // 2. Ubah indikator tipe QR dari Statis (010211) menjadi Dinamis (010212)
+  cleanQris = cleanQris.replace("010211", "010212");
+
+  // 3. Format Tag 54 (Nominal Transaksi)
   const nominalStr = String(nominal);
-  const lenStr = String(nominalStr.length).padStart(2, "0");
-  const tag54 = "54" + lenStr + nominalStr + "5802ID";
-  const data = parts[0] + tag54 + parts[1] + "6304";
+  const nominalLen = String(nominalStr.length).padStart(2, "0");
+  const tag54 = "54" + nominalLen + nominalStr;
 
+  // 4. Sisipkan Tag 54 tepat sebelum Tag 5802ID
+  let dynamicPayload = "";
+  if (cleanQris.includes("5802ID")) {
+    const parts = cleanQris.split("5802ID");
+    dynamicPayload = parts[0] + tag54 + "5802ID" + parts.slice(1).join("5802ID") + "6304";
+  } else {
+    dynamicPayload = cleanQris + tag54 + "6304";
+  }
+
+  // 5. Hitung CRC16-CCITT Standar EMVCo (Polynomial 0x1021, Init 0xFFFF)
   let crc = 0xffff;
-  for (let c = 0; c < data.length; c++) {
-    crc ^= data.charCodeAt(c) << 8;
-    for (let i = 0; i < 8; i++) {
-      if (crc & 0x8000) crc = ((crc << 1) ^ 0x1021) & 0xffff;
-      else crc = (crc << 1) & 0xffff;
+  for (let i = 0; i < dynamicPayload.length; i++) {
+    let c = dynamicPayload.charCodeAt(i);
+    crc ^= c << 8;
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = ((crc << 1) ^ 0x1021) & 0xffff;
+      } else {
+        crc = (crc << 1) & 0xffff;
+      }
     }
   }
-  const hex = crc.toString(16).toUpperCase().padStart(4, "0");
-  return data + hex;
-}
 
-async function cekMutasiGojek(nominal: number): Promise<boolean> {
-  if (!GOBIZ_TOKEN) {
-    console.error("GOBIZ_TOKEN belum diset di Environment Variables");
-    return false;
-  }
-
-  const endTime = new Date();
-  const startTime = new Date(endTime.getTime() - 60 * 60 * 1000); // 1 jam terakhir
-
-  const url =
-    "https://api.gojekapi.com/merchant-analytics/v2/merchants/transactions?from=0&size=20&statuses=SETTLEMENT,CAPTURE&payment_types=QRIS,GOPAY&start_time=" +
-    encodeURIComponent(startTime.toISOString()) +
-    "&end_time=" +
-    encodeURIComponent(endTime.toISOString()) +
-    "&merchant_ids=" +
-    GOBIZ_MERCHANT_ID;
-
-  try {
-    const res = await fetch(url, {
-      headers: {
-        Authorization: "Bearer " + GOBIZ_TOKEN,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!res.ok) {
-      console.error("Gagal fetch mutasi Gojek, status:", res.status);
-      return false;
-    }
-
-    const json = await res.json();
-    const transactions = json.transactions || [];
-
-    return transactions.some((t: any) => {
-      const gross = t.gross_amount / 100;
-      return (
-        (t.transaction_status === "SETTLEMENT" || t.transaction_status === "CAPTURE") &&
-        gross === nominal
-      );
-    });
-  } catch (err) {
-    console.error("Error cek mutasi GoBiz:", err);
-    return false;
-  }
+  const crcHex = crc.toString(16).toUpperCase().padStart(4, "0");
+  return dynamicPayload + crcHex;
 }
 
 // Fungsi Pengiriman Item Sukses
