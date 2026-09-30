@@ -224,21 +224,67 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   });
 });
 
-// 5. TERIMA BUKTI TRANSFER (FOTO) - DILENGKAPI PENCEGAH DOUBLE EXECUTION
-// Kirim notifikasi dan foto ke admin dengan penanganan error
-try {
-  if (adminId && adminId !== 0) {
-    await ctx.api.sendPhoto(adminId, fileId, {
-      caption: keteranganAdmin,
-      parse_mode: "Markdown",
-      reply_markup: adminKeyboard,
-    });
-  } else {
-    console.error("ADMIN_ID belum diisi atau bernilai 0 di Environment Variables!");
+// 5. TERIMA BUKTI TRANSFER (FOTO) - DILENGKAPI PENCEGAH DOUBLE EXECUTION & ERROR HANDLING
+bot.on("message:photo", async (ctx) => {
+  const userId = ctx.from.id;
+
+  // 1. Cari transaksi yang statusnya MENUNGGU_PEMBAYARAN
+  const { data: trx, error } = await supabase
+    .from("transactions")
+    .select("*, products(*)")
+    .eq("user_id", userId)
+    .eq("status", "MENUNGGU_PEMBAYARAN")
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Jika tidak ditemukan atau sudah terproses, langsung berhenti agar tidak dobel pesan
+  if (error || !trx) {
+    return;
   }
-} catch (err: any) {
-  console.error("Gagal mengirim bukti transfer ke admin:", err.message);
-}
+
+  // Ambil file_id foto dengan resolusi tertinggi
+  const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+
+  // 2. Kunci dan perbarui status transaksi di database
+  const { error: updateErr } = await supabase
+    .from("transactions")
+    .update({ payment_proof_file_id: fileId, status: "MENUNGGU_ACC" })
+    .eq("id", trx.id)
+    .eq("status", "MENUNGGU_PEMBAYARAN");
+
+  if (updateErr) return;
+
+  // Balas ke customer
+  await ctx.reply("✅ Bukti pembayaran berhasil diterima. Mohon tunggu verifikasi admin.");
+
+  // Tombol aksi untuk admin
+  const adminKeyboard = new InlineKeyboard()
+    .text("✅ Terima (ACC)", `acc_${trx.id}`)
+    .text("❌ Tolak", `reject_${trx.id}`);
+
+  const keteranganAdmin =
+    `🔔 *PESANAN MASUK!*\n\n` +
+    `🆔 *ID:* #TRX-${trx.id}\n` +
+    `👤 *Pembeli:* ${trx.user_name} (${trx.username})\n` +
+    `📦 *Produk:* ${trx.products?.name}\n` +
+    `💰 *Total:* Rp ${trx.amount.toLocaleString("id-ID")}`;
+
+  // 3. Kirim notifikasi foto ke admin
+  try {
+    if (adminId && adminId !== 0) {
+      await ctx.api.sendPhoto(adminId, fileId, {
+        caption: keteranganAdmin,
+        parse_mode: "Markdown",
+        reply_markup: adminKeyboard,
+      });
+    } else {
+      console.error("ADMIN_ID belum diisi atau bernilai 0 di Environment Variables!");
+    }
+  } catch (err: any) {
+    console.error("Gagal mengirim bukti transfer ke admin:", err.message);
+  }
+});
 
   // Jika tidak ditemukan atau sudah terproses, abaikan langsung tanpa spam error
   if (error || !trx) {
