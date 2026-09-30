@@ -556,6 +556,71 @@ bot.command("tambahstok", async (ctx) => {
 });
 
 // ==================== 8. MENU LAINNYA & BROADCAST ====================
+// ==================== FITUR ADMIN: MONITOR & BERSIHKAN DATABASE (/bersihkan) ====================
+bot.command("bersihkan", async (ctx) => {
+  if (ctx.from?.id !== adminId) return;
+
+  // 1. Hitung transaksi gagal / batal / ditolak
+  const { count: countTrxSampah, error: errTrx } = await supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .in("status", ["BATAL", "DITOLAK"]);
+
+  // 2. Hitung data stok lama yang sudah digunakan
+  const { count: countStokBekas, error: errStok } = await supabase
+    .from("product_stocks")
+    .select("*", { count: "exact", head: true })
+    .eq("is_used", true);
+
+  if (errTrx || errStok) {
+    return ctx.reply("❌ Gagal menganalisis database.");
+  }
+
+  const totalSampah = (countTrxSampah || 0) + (countStokBekas || 0);
+
+  if (totalSampah === 0) {
+    return ctx.reply("✨ <b>Database Bersih!</b>\nTidak ada transaksi sampah atau data stok bekas yang perlu dibersihkan.", { parse_mode: "HTML" });
+  }
+
+  const teksPeringatan =
+    `🧹 <b>ANALISIS SAMPAH DATABASE</b>\n\n` +
+    `• Transaksi Batal/Ditolak: <b>${countTrxSampah || 0} baris</b>\n` +
+    `• Stok Akun/Cookie Terpakai: <b>${countStokBekas || 0} baris</b>\n\n` +
+    `⚠️ <i>Data transaksi sukses/selesai dan stok aktif TIDAK AKAN dihapus.</i>\n\n` +
+    `Apakah Anda ingin menghapus data sampah di atas untuk menghemat ruang?`;
+
+  const keyboardBersih = new InlineKeyboard()
+    .text("🗑 Hapus Sekarang", "eksekusi_bersihkan_db")
+    .text("❌ Batal", "batal_bersihkan_db");
+
+  await ctx.reply(teksPeringatan, { parse_mode: "HTML", reply_markup: keyboardBersih });
+});
+
+// Handler Konfirmasi Eksekusi Pembersihan
+bot.callbackQuery("eksekusi_bersihkan_db", async (ctx) => {
+  if (ctx.from?.id !== adminId) return;
+
+  // Hapus transaksi BATAL dan DITOLAK
+  await supabase.from("transactions").delete().in("status", ["BATAL", "DITOLAK"]);
+
+  // Hapus data stok yang sudah terpakai
+  await supabase.from("product_stocks").delete().eq("is_used", true);
+
+  await ctx.editMessageText(
+    `✅ <b>PEMBERSIHAN BERHASIL!</b>\n\n` +
+    `Semua riwayat transaksi batal/ditolak dan stok berkas yang sudah terpakai berhasil dibersihkan dari Supabase.\n` +
+    `Ruang penyimpanan database Anda kini lebih optimal.`,
+    { parse_mode: "HTML" }
+  );
+  await ctx.answerCallbackQuery({ text: "Database berhasil dibersihkan!" });
+});
+
+bot.callbackQuery("batal_bersihkan_db", async (ctx) => {
+  if (ctx.from?.id !== adminId) return;
+  await ctx.editMessageText("❌ Pembersihan database dibatalkan.");
+  await ctx.answerCallbackQuery();
+});
+
 bot.command("broadcast", async (ctx) => {
   if (ctx.from?.id !== adminId) return;
   const pesan = ctx.match?.trim();
