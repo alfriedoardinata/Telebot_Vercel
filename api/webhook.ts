@@ -411,8 +411,9 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
 bot.callbackQuery(/^cek_bayar_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
 
-  // Jawab pop-up instan agar tombol tidak macet/loading terus di HP
-  await ctx.answerCallbackQuery({ text: "🔍 Memeriksa mutasi..." });
+  try {
+    await ctx.answerCallbackQuery({ text: "🔍 Memeriksa mutasi..." });
+  } catch {}
 
   const { data: trx } = await supabase
     .from("transactions")
