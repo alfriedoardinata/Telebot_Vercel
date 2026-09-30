@@ -299,23 +299,28 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
           .update({ stock: Math.max(0, trx.products.stock - stockItems.length) })
           .eq("id", trx.product_id);
 
-        const isiTeksFile = stockItems.map((item) => item.account_data).join("\n\n");
-        const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
-        const namaFile = trx.products.name.replace(/\s+/g, "_");
+      // Format daftar item dengan penomoran rapi
+        const daftarItem = stockItems
+          .map((item, index) => `[ITEM ${index + 1}]\n${item.account_data}`)
+          .join("\n\n");
 
-        const pesanPengiriman =
-          `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
-          `Pesanan *#TRX-${trx.id}* telah disetujui.\n` +
-          `📦 Produk: *${trx.products.name} (${stockItems.length} item)*\n\n` +
-          `✅ Pesanan Anda terlampir pada file *.txt* di bawah ini.`;
+        // Format template isi file .txt lengkap dengan panduan
+        const isiTeksFile = 
+`============================================================
+              TERIMA KASIH TELAH BERBELANJA
+============================================================
+No. Transaksi : #TRX-${trx.id}
+Produk        : ${trx.products.name}
+Jumlah        : ${stockItems.length} Item
+Tanggal       : ${new Date().toLocaleDateString("id-ID")}
 
-        await ctx.api.sendDocument(
-          trx.user_id,
-          new InputFile(fileBuffer, `${namaFile}_TRX${trx.id}.txt`),
-          { caption: pesanPengiriman, parse_mode: "Markdown" }
-        );
-      }
-    } else {
+----------------------- DATA AKUN / STOK -------------------
+${daftarItem}
+
+============================================================
+Catatan: Garansi berlaku 1x24 jam sejak pesanan disetujui.
+============================================================`;
+        
       // Untuk Slot Tumbal (ID 1) -> Kirim tautan chat manual
       if (trx.products.stock >= jumlahBeli) {
         await supabase
