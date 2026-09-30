@@ -7,14 +7,52 @@ const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const adminId = 1294259168;
 
-const GOBIZ_TOKEN = process.env.GOBIZ_TOKEN || "eyJhbGciOiJkaXIiLCJjdHkiOiJKV1QiLCJlbmMiOiJBMTI4R0NNIiwidHlwIjoiSldUIiwiemlwIjoiREVGIn0..J1-B62Rd2fW4dS1H.cb_lhRxcOust-stoafwrDr2GDRC2O7u6toGob9c14CRlN1AN2_xqcpwNs4kx4YBhsCmZuZ48dSN7hTOqYhFnfvnRa59_uK0seNY9ZFuzxuRPll24qu3TYZrX-SG9mIaZbmdq9pe3qTgVqoaC9wYWCoebMfVBsOZ26WumgNZIwlIj3BeqwBjwpXbvXQH0qQmMhQSNbGJk2nYW95G8MHJKL1NUB_VQGIxrxtkCjrQgOZCypkaaA5iyQSVQc6OOVYZ0Y0R3MiT5TTvXUNyJIPg9tXB1jbTFhyC9yEHta9rlBkcLiIsvsdpzgHFfHg1aou3LmHeSkrkwstMRwIXCOzI1YAkrBk3NtC3yAhtjsBc5hSmymJf7cLYv2mG2GVKWqg4cPoafhK1-iZf0km0rWjPy3hqEIW9vDZr1OE_P5ip0nNb_0U2EZa-abcYKRmyUCIKg1h0mYDC15sdMrjHFuX8DvCnRwXYbKtV3gB4eQwZkDq0nBTQ5NiFFyRa2oSDaqLy8G6z-LhfaKZ_tjTNA18lfzuyh6I4wWHRpvSnzz4kqOepqBJ1nhQ09UrrFD6oUV1He5Er-VINDAVYANh5-4GpXv49FMU5eaoqI217ii1ocxjbghEXnq5BTXZhvLOeMtGTt91cWqVA-v5QdG7GFhkbtgX5aTOvh0dVSx1Xt4ZnV2RTH4Es7BifMgZZX2QwxSJpUvHPvFWguZ83d_i8rlC5UEMQGoYFzm6I0FNeOobJCmHNKyVeVK5fj-bhJZWW-ZLzrMXC4Nv1GG8e4Ci3HjOpml6Rs9B2LaxKEtWRam73mASwHx_GeP8EKG5vKi7m_LGjdO_-oQiDyuErOm7z3I9Us42J26PNTUeL7qqFtxH3kH9azZrf2LMo9r9zCXQlNr4ATigsNaeyiald4CfCyNzRIo8jcSg-4dCLmfoNvMFrUs_XRHKKKwqTVSqoZsRcRGk5hIbKow1jhNZ7uqneqDDcwsf2x9heM3Mjq77807LZa3zUC-xnfiuChP5A5Qm_5eaM5f8-YuhKK6SvpzZfT2gIA-9NA8NbHmvfDZDxH4SQTXlW1Bp7YEvVFEQOyQwgw-xd6K6aLnxzw4fG5Q1GBRcc7oKPMbY_WWuNo429vRWMrUNexsUbhTayO-oPioGtU60Da7qTa0a4VvxisUUffJFcQ-zHRMG2NtXLqNH_T8Z9DCuztwvVsn6VzA5g4T6m8R2qftbjQjWBfrQayWfGVn6yTPia7FtP9J7QT3-SilaIJ87QUoI7pvltzsjaKGgqiY62eN-RxTKQfhzrrxWN_ozY4s_4-FSD9gVzq6sAe0vzaLWlHtqeNNy7EOf-IrOUDG7UIDpWnT1U84aDlJdZdGqwkS7UOvjA7Mx5T7NXJ0D-VPZfw0hYH2S9UG83A8xCxhPOUe9IrbxLwhC3bjcMEzL4wy2X5sN95BPgUPkJMA4zG8MXFST4UFV61rCp8zVsp0_Pz9OXT8LpSwqeCnt_j2wRIFaHdSg2PfBLSjaqX5yW1RAW5CjXJi8RLU5OJvqse5oC_ua47QUuegXc87it40wS4xxZeW53LaR6h7OP8Ut8m484MZIfbmLH5pSPC7o5hKLkBgsQPPCgn4cYVaZBT1Stc_1ccPCZk6VhmMgkPZuRMC0lZzQmzjSN0vqDPlsXzZB_4zlEcC9MQC6b8I7lwx-YCBBzXEQb6KEP5XLn1GslEAi-rWPt4qjgWMra8uNhIeJLtO_aLcOP-hPQh_FjitS8GSEXPUEYP75VzuBLW45O4bnFfDdPnJMzQdYEz2zxjcDu3kzm6pN8XviRe_4QXVg1E-HD7p8KtzzbHd01bdPQwxOdp5_qhZTA-vRlZplwrttuDOfJHBN8iKh_fOYHf0bFJ3dznxSavR_c_MPnHshkjGIdgNcIOwxpm1dX0bdQ0a3-TUbwKuOynSrMft8uusPrJRI5y66SbWPZzRiGOqqD1voGaHUru8zQBQXoQVQfog2C44SO31sOhXOOKfT2yE6oVmXXygQs5q-vBLAs-BPMMV0QkZiPg-FWLHZs_e7h--ss9k5vNDvT-Ai3D2L-b_sRy5a_l-xtUwXfskc7jca8g-zC__sDwYWE652PIWhNbUnki1Gj8WdgsKCU6T6V0nw2n-0v8rIjpaoOYo1pDH5WWmwvTlS8.o7zqi-GQ4FGJMx3jtXyC_A";
+const GOBIZ_TOKEN = process.env.GOBIZ_TOKEN || "";
 const GOBIZ_MERCHANT_ID = process.env.GOBIZ_MERCHANT_ID || "G591782521";
-const QRIS_RAW_STRING = process.env.QRIS_RAW_STRING || "00020101021126610014COM.GO-JEK.WWW01189360091435917825210210G5917825210303UMI51440014ID.CO.QRIS.WWW0215ID10254308911560303UMI5204594753033605802ID5925ALFRIEDO STORE , Toko Kad6012DELI SERDANG61052037162070703A016304FCD1";
+const QRIS_RAW_STRING = process.env.QRIS_RAW_STRING || "";
 
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ==================== HELPER QRIS DINAMIS & MUTASI ====================
+// ==================== HELPER QRIS DINAMIS ====================
+function generateDynamicQris(rawQris: string, nominal: number): string {
+  let cleanQris = rawQris.trim();
+  if (cleanQris.includes("6304")) {
+    cleanQris = cleanQris.substring(0, cleanQris.lastIndexOf("6304"));
+  }
+
+  cleanQris = cleanQris.replace("010211", "010212");
+
+  const nominalStr = String(nominal);
+  const nominalLen = String(nominalStr.length).padStart(2, "0");
+  const tag54 = "54" + nominalLen + nominalStr;
+
+  let dynamicPayload = "";
+  if (cleanQris.includes("5802ID")) {
+    const parts = cleanQris.split("5802ID");
+    dynamicPayload = parts[0] + tag54 + "5802ID" + parts.slice(1).join("5802ID") + "6304";
+  } else {
+    dynamicPayload = cleanQris + tag54 + "6304";
+  }
+
+  let crc = 0xffff;
+  for (let i = 0; i < dynamicPayload.length; i++) {
+    let c = dynamicPayload.charCodeAt(i);
+    crc ^= c << 8;
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = ((crc << 1) ^ 0x1021) & 0xffff;
+      } else {
+        crc = (crc << 1) & 0xffff;
+      }
+    }
+  }
+
+  const crcHex = crc.toString(16).toUpperCase().padStart(4, "0");
+  return dynamicPayload + crcHex;
+}
+
+// ==================== HELPER CEK MUTASI GOBIZ ====================
 async function cekMutasiGojek(nominal: number): Promise<boolean> {
   if (!GOBIZ_TOKEN) {
     console.error("GOBIZ_TOKEN belum diset di Environment Variables");
@@ -22,7 +60,7 @@ async function cekMutasiGojek(nominal: number): Promise<boolean> {
   }
 
   const endTime = new Date();
-  const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000); // Cari dalam 24 jam terakhir
+  const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000); // 24 jam terakhir
 
   const url =
     "https://api.gojekapi.com/merchant-analytics/v2/merchants/transactions?from=0&size=20&statuses=SETTLEMENT,CAPTURE&payment_types=QRIS,GOPAY&start_time=" +
@@ -68,48 +106,8 @@ async function cekMutasiGojek(nominal: number): Promise<boolean> {
     return false;
   }
 }
-  // 1. Bersihkan string dan potong 4 digit CRC lama di akhir
-  let cleanQris = rawQris.trim();
-  if (cleanQris.includes("6304")) {
-    cleanQris = cleanQris.substring(0, cleanQris.lastIndexOf("6304"));
-  }
 
-  // 2. Ubah indikator tipe QR dari Statis (010211) menjadi Dinamis (010212)
-  cleanQris = cleanQris.replace("010211", "010212");
-
-  // 3. Format Tag 54 (Nominal Transaksi)
-  const nominalStr = String(nominal);
-  const nominalLen = String(nominalStr.length).padStart(2, "0");
-  const tag54 = "54" + nominalLen + nominalStr;
-
-  // 4. Sisipkan Tag 54 tepat sebelum Tag 5802ID
-  let dynamicPayload = "";
-  if (cleanQris.includes("5802ID")) {
-    const parts = cleanQris.split("5802ID");
-    dynamicPayload = parts[0] + tag54 + "5802ID" + parts.slice(1).join("5802ID") + "6304";
-  } else {
-    dynamicPayload = cleanQris + tag54 + "6304";
-  }
-
-  // 5. Hitung CRC16-CCITT Standar EMVCo (Polynomial 0x1021, Init 0xFFFF)
-  let crc = 0xffff;
-  for (let i = 0; i < dynamicPayload.length; i++) {
-    let c = dynamicPayload.charCodeAt(i);
-    crc ^= c << 8;
-    for (let j = 0; j < 8; j++) {
-      if ((crc & 0x8000) !== 0) {
-        crc = ((crc << 1) ^ 0x1021) & 0xffff;
-      } else {
-        crc = (crc << 1) & 0xffff;
-      }
-    }
-  }
-
-  const crcHex = crc.toString(16).toUpperCase().padStart(4, "0");
-  return dynamicPayload + crcHex;
-}
-
-// Fungsi Pengiriman Item Sukses
+// ==================== FUNGSI PROSES PESANAN SELESAI ====================
 async function prosesPesananSelesai(trx: any, ctxApi: any) {
   const jumlahBeli = (trx.amount % trx.products.price) || 1;
 
