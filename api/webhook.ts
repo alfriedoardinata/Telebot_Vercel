@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 const botToken = process.env.BOT_TOKEN || "";
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
-const adminId = parseInt(process.env.ADMIN_ID || "6639037080");
+const adminId = parseInt(process.env.ADMIN_ID || "1294259168");
 
 const QRIS_IMAGE_URL = "https://i.postimg.cc/3rBPcpG4/DANA-ALFRIEDO.jpg";
 
