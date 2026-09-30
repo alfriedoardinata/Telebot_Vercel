@@ -224,11 +224,12 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   });
 });
 
-// 5. TERIMA BUKTI TRANSFER (FOTO)
+// 5. TERIMA BUKTI TRANSFER (FOTO) - DILENGKAPI PENCEGAH DOUBLE EXECUTION
 bot.on("message:photo", async (ctx) => {
   const userId = ctx.from.id;
 
-  const { data: trx } = await supabase
+  // Cari transaksi yang benar-benar masih menunggu pembayaran
+  const { data: trx, error } = await supabase
     .from("transactions")
     .select("*, products(*)")
     .eq("user_id", userId)
@@ -237,16 +238,21 @@ bot.on("message:photo", async (ctx) => {
     .limit(1)
     .maybeSingle();
 
-  if (!trx) {
-    return ctx.reply("❌ Tidak ada pesanan menunggu pembayaran. Gunakan /start untuk memesan.");
+  // Jika tidak ditemukan atau sudah terproses, abaikan langsung tanpa spam error
+  if (error || !trx) {
+    return;
   }
 
   const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
 
-  await supabase
+  // Kunci status transaksi terlebih dahulu menjadi MENUNGGU_ACC
+  const { error: updateErr } = await supabase
     .from("transactions")
     .update({ payment_proof_file_id: fileId, status: "MENUNGGU_ACC" })
-    .eq("id", trx.id);
+    .eq("id", trx.id)
+    .eq("status", "MENUNGGU_PEMBAYARAN"); // Double-check kondisi agar tidak dobel
+
+  if (updateErr) return;
 
   await ctx.reply("✅ Bukti pembayaran berhasil diterima. Mohon tunggu verifikasi admin.");
 
@@ -268,7 +274,7 @@ bot.on("message:photo", async (ctx) => {
   });
 });
 
-// 6. ADMIN ACC
+// 6. ADMIN ACC (FORMAT FILE BERSIH & LANGSUNG KE DATA)
 bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
   const { data: trx } = await supabase
@@ -278,10 +284,11 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
     .single();
 
   if (trx && trx.status !== "SELESAI") {
+    // 1. Update status transaksi menjadi SELESAI
     await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trxId);
     const jumlahBeli = (trx.amount % trx.products.price) || 1;
 
-    // Untuk Cookie Fresh, Cookie Bekas, FP (ID selain 1) -> Kirim file .txt
+    // 2. KHUSUS PRODUK BERKAS: Cookie Fresh (2), Cookie Bekas (3), FP (4)
     if (trx.product_id !== 1) {
       const { data: stockItems } = await supabase
         .from("product_stocks")
@@ -291,37 +298,62 @@ bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
         .limit(jumlahBeli);
 
       if (stockItems && stockItems.length > 0) {
+        // Tandai data terpakai di database
         const itemIds = stockItems.map((item) => item.id);
         await supabase.from("product_stocks").update({ is_used: true }).in("id", itemIds);
 
+        // Update sisa kuota di tabel products
         await supabase
           .from("products")
           .update({ stock: Math.max(0, trx.products.stock - stockItems.length) })
           .eq("id", trx.product_id);
 
-      // Format daftar item dengan penomoran rapi
+        // Susun daftar data secara rapi
         const daftarItem = stockItems
           .map((item, index) => `[ITEM ${index + 1}]\n${item.account_data}`)
           .join("\n\n");
 
-        // Format template isi file .txt lengkap dengan panduan
+        // Format teks file .txt bersih tanpa petunjuk yang panjang
         const isiTeksFile = 
-`============================================================
-              TERIMA KASIH TELAH BERBELANJA
-============================================================
-No. Transaksi : #TRX-${trx.id}
-Produk        : ${trx.products.name}
-Jumlah        : ${stockItems.length} Item
-Tanggal       : ${new Date().toLocaleDateString("id-ID")}
+`========================================
+       DETAIL PESANAN #TRX-${trx.id}
+========================================
+Produk  : ${trx.products.name}
+Jumlah  : ${stockItems.length} Item
+Tanggal : ${new Date().toLocaleDateString("id-ID")}
+Status  : Selesai (Verified)
+========================================
 
------------------------ DATA AKUN / STOK -------------------
 ${daftarItem}
 
-============================================================
-Catatan: Garansi berlaku 1x24 jam sejak pesanan disetujui.
-============================================================`;
-        
-      // Untuk Slot Tumbal (ID 1) -> Kirim tautan chat manual
+========================================
+Garansi 1x24 Jam | Simpan data dengan aman.
+========================================`;
+
+        const fileBuffer = Buffer.from(isiTeksFile, "utf-8");
+        const namaFile = trx.products.name.replace(/\s+/g, "_");
+
+        const pesanPengiriman =
+          `🎉 *PEMBAYARAN DITERIMA!*\n\n` +
+          `Pesanan *#TRX-${trx.id}* telah disetujui.\n` +
+          `📦 Produk: *${trx.products.name} (${stockItems.length} item)*\n\n` +
+          `✅ Data pesanan Anda terlampir pada file *.txt* di bawah ini.`;
+
+        await ctx.api.sendDocument(
+          trx.user_id,
+          new InputFile(fileBuffer, `${namaFile}_TRX${trx.id}.txt`),
+          { caption: pesanPengiriman, parse_mode: "Markdown" }
+        );
+      } else {
+        await ctx.api.sendMessage(
+          trx.user_id,
+          `🎉 *PEMBAYARAN DITERIMA!*\n\nPesanan *#TRX-${trx.id}* disetujui, namun stok otomatis sedang kosong. Admin akan segera mengirimkannya secara manual.`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    } 
+    // 3. KHUSUS PRODUK MANUAL: Slot Tumbal (ID 1)
+    else {
       if (trx.products.stock >= jumlahBeli) {
         await supabase
           .from("products")
@@ -340,6 +372,7 @@ Catatan: Garansi berlaku 1x24 jam sejak pesanan disetujui.
       await ctx.api.sendMessage(trx.user_id, pesanManual, { parse_mode: "Markdown", reply_markup: customerKeyboard });
     }
 
+    // Update notifikasi di ruang chat admin
     await ctx.editMessageCaption({
       caption: `✅ *PESANAN #TRX-${trx.id} TELAH DI-ACC*`,
       parse_mode: "Markdown",
