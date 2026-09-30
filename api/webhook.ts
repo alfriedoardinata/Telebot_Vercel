@@ -240,42 +240,41 @@ bot.on("message:photo", async (ctx) => {
     .text("✅ Terima (ACC)", `acc_${trx.id}`)
     .text("❌ Tolak", `reject_${trx.id}`);
 
+  // Menggunakan HTML agar kebal dari username yang memakai garis bawah (_)
+  const namaPembeli = (trx.user_name || "User").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const usernamePembeli = (trx.username || "-").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const namaProduk = (trx.products?.name || "Produk").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
   const keteranganAdmin =
-    `🔔 *PESANAN MASUK!*\n\n` +
-    `🆔 *ID:* #TRX-${trx.id}\n` +
-    `👤 *Pembeli:* ${trx.user_name} (${trx.username})\n` +
-    `📦 *Produk:* ${trx.products?.name}\n` +
-    `💰 *Total:* Rp ${trx.amount.toLocaleString("id-ID")}`;
+    `🔔 <b>PESANAN MASUK!</b>\n\n` +
+    `🆔 <b>ID:</b> #TRX-${trx.id}\n` +
+    `👤 <b>Pembeli:</b> ${namaPembeli} (${usernamePembeli})\n` +
+    `📦 <b>Produk:</b> ${namaProduk}\n` +
+    `💰 <b>Total:</b> Rp ${trx.amount.toLocaleString("id-ID")}`;
 
-// 5.3. Kirim notifikasi foto ke akun admin
-  console.log(`[DEBUG] Mengirim bukti transaksi TRX-${trx.id} ke Admin ID: ${adminId}`);
-
+  // 5.3. Kirim notifikasi foto ke akun admin
   try {
-    // Coba kirim fotonya langsung
     await ctx.api.sendPhoto(adminId, fileId, {
       caption: keteranganAdmin,
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: adminKeyboard,
     });
-    console.log(`[DEBUG] Sukses kirim foto ke Admin ${adminId}`);
   } catch (err: any) {
-    console.error(`[ERROR] Gagal kirim foto ke admin:`, err.message);
-
-    // Fallback: Kirim teks jika foto ditolak Telegram
+    console.error("Gagal mengirim foto ke admin, beralih ke teks:", err);
     try {
       await ctx.api.sendMessage(
         adminId,
-        `${keteranganAdmin}\n\n⚠️ *(Foto tidak dapat ditampilkan langsung. File ID: \`${fileId}\`)*`,
+        `${keteranganAdmin}\n\n⚠️ <i>(Foto tidak dapat diteruskan langsung, cek bukti di database)</i>`,
         {
-          parse_mode: "Markdown",
+          parse_mode: "HTML",
           reply_markup: adminKeyboard,
         }
       );
-      console.log(`[DEBUG] Sukses kirim pesan teks fallback ke Admin ${adminId}`);
     } catch (innerErr: any) {
-      console.error(`[FATAL ERROR] Gagal total kirim ke Admin ${adminId}:`, innerErr.message);
+      console.error("Gagal total kirim ke admin:", innerErr);
     }
   }
+});
 
 // 6. ADMIN ACC (PENGIRIMAN FILE FORMAT SUPER RAW PER BARIS)
 bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
