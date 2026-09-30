@@ -247,29 +247,35 @@ bot.on("message:photo", async (ctx) => {
     `📦 *Produk:* ${trx.products?.name}\n` +
     `💰 *Total:* Rp ${trx.amount.toLocaleString("id-ID")}`;
 
-  // 5.3. Kirim notifikasi foto ke akun admin
+// 5.3. Kirim notifikasi foto ke akun admin
+  console.log(`[DEBUG] Mengirim bukti transaksi TRX-${trx.id} ke Admin ID: ${adminId}`);
+
   try {
+    // Coba kirim fotonya langsung
     await ctx.api.sendPhoto(adminId, fileId, {
       caption: keteranganAdmin,
       parse_mode: "Markdown",
       reply_markup: adminKeyboard,
     });
+    console.log(`[DEBUG] Sukses kirim foto ke Admin ${adminId}`);
   } catch (err: any) {
-    console.error("Gagal mengirim foto ke admin, beralih ke teks:", err);
+    console.error(`[ERROR] Gagal kirim foto ke admin:`, err.message);
+
+    // Fallback: Kirim teks jika foto ditolak Telegram
     try {
       await ctx.api.sendMessage(
         adminId,
-        `${keteranganAdmin}\n\n⚠️ *(Foto tidak dapat diteruskan langsung, cek riwayat bukti di database)*`,
+        `${keteranganAdmin}\n\n⚠️ *(Foto tidak dapat ditampilkan langsung. File ID: \`${fileId}\`)*`,
         {
           parse_mode: "Markdown",
           reply_markup: adminKeyboard,
         }
       );
+      console.log(`[DEBUG] Sukses kirim pesan teks fallback ke Admin ${adminId}`);
     } catch (innerErr: any) {
-      console.error("Gagal total kirim ke admin:", innerErr);
+      console.error(`[FATAL ERROR] Gagal total kirim ke Admin ${adminId}:`, innerErr.message);
     }
   }
-});
 
 // 6. ADMIN ACC (PENGIRIMAN FILE FORMAT SUPER RAW PER BARIS)
 bot.callbackQuery(/^acc_(\d+)$/, async (ctx) => {
