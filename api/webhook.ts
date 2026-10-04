@@ -109,7 +109,8 @@ async function cekMutasiGojek(nominal: number): Promise<boolean> {
 
 // ==================== FUNGSI PROSES PESANAN SELESAI ====================
 async function prosesPesananSelesai(trx: any, ctxApi: any) {
-  const jumlahBeli = (trx.amount % trx.products.price) || 1;
+  // Hitung jumlah item secara presisi berdasarkan harga produk
+  const jumlahBeli = Math.floor(trx.amount / trx.products.price) || 1;
 
   // PRODUK BERKAS DIGITAL: Cookie Fresh (2), Cookie Bekas (3), FP (4)
   if (trx.product_id !== 1) {
@@ -356,7 +357,12 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   }
 
   const subtotal = product.price * jumlahBeli;
-  const kodeUnik = jumlahBeli;
+
+  // =========================================================================
+  // EKSEKUSI KODE UNIK BOT 1: Rentang Acak 1 sampai 150
+  // (Bot 2 nanti akan menggunakan rentang acak 151 sampai 300)
+  // =========================================================================
+  const kodeUnik = Math.floor(Math.random() * 150) + 1;
   const totalTagihan = subtotal + kodeUnik;
 
   const { data: trx, error } = await supabase.from("transactions").insert([
