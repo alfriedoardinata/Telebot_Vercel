@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { Bot, InlineKeyboard, InputFile } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import { createClient } from "@supabase/supabase-js";
-import QRCode from "qrcode";
 
 const botToken = process.env.BOT_TOKEN || "";
 const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -57,8 +56,19 @@ function buatQRISDinamis(rawString: string, nominal: number): string {
 }
 
 // ==================== 1. COMMAND: /start ====================
-bot.command("start", async (ctx) => {
-  const keyboard = new InlineKeyboard()
+const pesanMenuUtama =
+  "👋 <b>Selamat Datang di Toko Tumbal Bot!</b>\n" +
+  "━━━━━━━━━━━━━━━━━━━━━━\n" +
+  "Layanan otomatis penyedia akun tumbal dan berkas digital dengan verifikasi instan QRIS DANA.\n\n" +
+  "⚡ <b>Keunggulan Sistem:</b>\n" +
+  "• Pengiriman berkas instan otomatis 24/7\n" +
+  "• Tanpa antre konfirmasi manual admin\n" +
+  "• Pembayaran QRIS mendukung seluruh e-wallet & m-banking\n" +
+  "━━━━━━━━━━━━━━━━━━━━━━\n" +
+  "Silakan pilih menu transaksi di bawah:";
+
+function keyboardMenuUtama() {
+  return new InlineKeyboard()
     .text("🟢 Beli Produk", "menu_katalog")
     .text("📜 Riwayat Pesanan", "menu_riwayat")
     .row()
@@ -66,56 +76,21 @@ bot.command("start", async (ctx) => {
     .text("💬 Hubungi Admin", "menu_admin")
     .row()
     .text("🔄 Segarkan Bot", "menu_start");
+}
 
-  const teksSambutan =
-    "👋 <b>Selamat Datang di Toko Tumbal Bot!</b>\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━\n" +
-    "Layanan otomatis penyedia akun tumbal dan berkas digital dengan verifikasi instan QRIS DANA.\n\n" +
-    "⚡ <b>Keunggulan Sistem:</b>\n" +
-    "• Pengiriman berkas instan otomatis 24/7\n" +
-    "• Tanpa antre konfirmasi manual admin\n" +
-    "• Pembayaran QRIS mendukung seluruh e-wallet & m-banking\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━\n" +
-    "Silakan pilih menu transaksi di bawah:";
-
-  if (ctx.callbackQuery) {
-    try {
-      await ctx.editMessageText(teksSambutan, { reply_markup: keyboard, parse_mode: "HTML" });
-    } catch {
-      await ctx.reply(teksSambutan, { reply_markup: keyboard, parse_mode: "HTML" });
-    }
-  } else {
-    await ctx.reply(teksSambutan, { reply_markup: keyboard, parse_mode: "HTML" });
-  }
+bot.command("start", async (ctx) => {
+  await ctx.reply(pesanMenuUtama, { reply_markup: keyboardMenuUtama(), parse_mode: "HTML" });
 });
 
 bot.callbackQuery("menu_start", async (ctx) => {
   try {
     await ctx.answerCallbackQuery();
   } catch {}
-  const keyboard = new InlineKeyboard()
-    .text("🟢 Beli Produk", "menu_katalog")
-    .text("📜 Riwayat Pesanan", "menu_riwayat")
-    .row()
-    .text("ℹ️ Panduan Pembayaran", "menu_panduan")
-    .text("💬 Hubungi Admin", "menu_admin")
-    .row()
-    .text("🔄 Segarkan Bot", "menu_start");
-
-  const teksSambutan =
-    "👋 <b>Selamat Datang di Toko Tumbal Bot!</b>\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━\n" +
-    "Layanan otomatis penyedia akun tumbal dan berkas digital dengan verifikasi instan QRIS DANA.\n\n" +
-    "⚡ <b>Keunggulan Sistem:</b>\n" +
-    "• Pengiriman berkas instan otomatis 24/7\n" +
-    "• Tanpa antre konfirmasi manual admin\n" +
-    "• Pembayaran QRIS mendukung seluruh e-wallet & m-banking\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━\n" +
-    "Silakan pilih menu transaksi di bawah:";
-
   try {
-    await ctx.editMessageText(teksSambutan, { reply_markup: keyboard, parse_mode: "HTML" });
-  } catch {}
+    await ctx.editMessageText(pesanMenuUtama, { reply_markup: keyboardMenuUtama(), parse_mode: "HTML" });
+  } catch {
+    await ctx.reply(pesanMenuUtama, { reply_markup: keyboardMenuUtama(), parse_mode: "HTML" });
+  }
 });
 
 // ==================== 2. MENU: KATALOG PRODUK ====================
@@ -168,8 +143,6 @@ bot.callbackQuery(/^detail_(\d+)$/, async (ctx) => {
   }
 
   const keyboard = new InlineKeyboard();
-
-  // Pilihan jumlah beli (1 s/d batas stok)
   const opsiJumlah = [1, 2, 5, 10].filter((jml) => jml <= product.stock);
   if (!opsiJumlah.includes(1) && product.stock >= 1) opsiJumlah.unshift(1);
 
@@ -183,20 +156,20 @@ bot.callbackQuery(/^detail_(\d+)$/, async (ctx) => {
     "━━━━━━━━━━━━━━━━━━━━━━\n" +
     `💵 <b>Harga Satuan:</b> Rp ${product.price.toLocaleString("id-ID")}\n` +
     `📊 <b>Sisa Stok:</b> ${product.stock} item\n` +
-    `📝 <b>Keterangan:</b> ${product.description || "Pengiriman otomatis via berkas file .txt langsung di bot."}\n` +
+    `📝 <b>Keterangan:</b> ${product.description || "Pengiriman otomatis file .txt langsung di obrolan ini."}\n` +
     "━━━━━━━━━━━━━━━━━━━━━━\n" +
     "Pilih jumlah pembelian:";
 
   await ctx.editMessageText(teksDetail, { reply_markup: keyboard, parse_mode: "HTML" });
 });
 
-// ==================== 4. BUAT INVOICE & GENERATE QRIS DINAMIS ====================
+// ==================== 4. BUAT INVOICE & QRIS DINAMIS ====================
 bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   const productId = parseInt(ctx.match[1]);
   const jumlahBeli = parseInt(ctx.match[2]);
 
   try {
-    await ctx.answerCallbackQuery({ text: "⚡ Menyiapkan QRIS Dinamis..." });
+    await ctx.answerCallbackQuery({ text: "⚡ Menyiapkan invoice..." });
   } catch {}
 
   const { data: product } = await supabase.from("products").select("*").eq("id", productId).single();
@@ -206,8 +179,6 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   }
 
   const subtotal = product.price * jumlahBeli;
-
-  // Kode unik rentang 1 s/d 150 untuk Bot Utama
   const kodeUnik = Math.floor(Math.random() * 150) + 1;
   const totalTagihan = subtotal + kodeUnik;
 
@@ -225,16 +196,12 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
     .single();
 
   if (error || !newTrx) {
-    return ctx.reply("❌ Gagal membuat transaksi. Silakan coba sesaat lagi.");
+    return ctx.reply("❌ Gagal membuat transaksi. Silakan coba kembali.");
   }
 
-  // Buat QRIS Dinamis
+  // QR code generated via URL publik berkecepatan tinggi tanpa dependensi local canvas
   const qrisStringFinal = buatQRISDinamis(qrisRawString, totalTagihan);
-  const qrImageBuffer = await QRCode.toBuffer(qrisStringFinal, {
-    scale: 8,
-    margin: 2,
-    color: { dark: "#000000", light: "#ffffff" },
-  });
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&margin=10&data=${encodeURIComponent(qrisStringFinal)}`;
 
   const invoiceKeyboard = new InlineKeyboard()
     .text("🔄 Cek Pembayaran", `cek_bayar_${newTrx.id}`)
@@ -248,10 +215,10 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
     `📦 <b>Produk:</b> ${product.name}\n` +
     `🔢 <b>Jumlah:</b> ${jumlahBeli} item\n` +
     `💰 <b>Subtotal:</b> Rp ${subtotal.toLocaleString("id-ID")}\n` +
-    `🎟️ <b>Kode Verifikasi:</b> Rp ${kodeUnik}\n` +
+    `🎟️ <b>Kode Unik:</b> Rp ${kodeUnik}\n` +
     "━━━━━━━━━━━━━━━━━━━━━━\n" +
     `💵 <b>TOTAL WAJIB TRANSFER:</b>\n` +
-    `👉 <code>${totalTagihan}</code> <i>(Ketuk untuk menyalin angka)</i>\n` +
+    `👉 <code>${totalTagihan}</code> <i>(Ketuk untuk menyalin)</i>\n` +
     "━━━━━━━━━━━━━━━━━━━━━━\n" +
     "📌 <b>PETUNJUK BAYAR INSTAN:</b>\n" +
     "1. Scan QRIS di atas via <b>DANA, GoPay, OVO, ShopeePay, BCA, atau m-Banking</b>.\n" +
@@ -262,7 +229,7 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
     await ctx.deleteMessage();
   } catch {}
 
-  await ctx.replyWithPhoto(new InputFile(qrImageBuffer, `QRIS_TRX_${newTrx.id}.png`), {
+  await ctx.replyWithPhoto(qrImageUrl, {
     caption: teksInvoice,
     parse_mode: "HTML",
     reply_markup: invoiceKeyboard,
@@ -291,7 +258,7 @@ bot.callbackQuery(/^cek_bayar_(\d+)$/, async (ctx) => {
     try {
       await ctx.deleteMessage();
     } catch {}
-    return ctx.reply("✅ <b>Pembayaran lunas! Produk telah dikirimkan ke obrolan ini.</b>", { parse_mode: "HTML" });
+    return ctx.reply("✅ <b>Pembayaran lunas! Produk telah dikirimkan ke chat ini.</b>", { parse_mode: "HTML" });
   }
 
   if (trx.status === "BATAL" || trx.status === "DITOLAK") {
@@ -404,7 +371,6 @@ bot.callbackQuery("menu_admin", async (ctx) => {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "POST") {
     try {
-      await bot.init();
       await bot.handleUpdate(req.body);
       return res.status(200).json({ ok: true });
     } catch (err: any) {
