@@ -34,9 +34,9 @@ async function prosesPesananSelesai(trx: any) {
 
       const pesanPengiriman =
         "🎉 <b>PEMBAYARAN DITERIMA!</b>\n\n" +
-        "Pesanan <b>#TRX-" + trx.id + "</b> telah diverifikasi lunas otomatis via DANA.\n" +
+        "Pesanan <b>#TRX-" + trx.id + "</b> telah diverifikasi lunas secara otomatis.\n" +
         "📦 Produk: <b>" + trx.products.name + " (" + stockItems.length + " item)</b>\n\n" +
-        "✅ Berkas produk terlampir di bawah:";
+        "✅ File produk terlampir:";
 
       await bot.api.sendDocument(
         trx.user_id,
@@ -58,7 +58,7 @@ async function prosesPesananSelesai(trx: any) {
   try {
     await bot.api.sendMessage(
       adminId,
-      "💰 <b>PEMBAYARAN DANA MASUK & LUNAS!</b>\n\n" +
+      "💰 <b>PEMBAYARAN DANA MASUK!</b>\n\n" +
       "🆔 #TRX-" + trx.id + "\n" +
       "👤 " + (trx.user_name || "User") + " (" + (trx.username || "-") + ")\n" +
       "📦 " + trx.products.name + "\n" +
@@ -74,47 +74,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const bodyStr = JSON.stringify(req.body);
-    console.log("Raw Notif DANA:", bodyStr);
+    const rawData = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    console.log("PAYLOAD LENGKAP DARI HP:", rawData);
 
-    // Ambil deretan angka nominal (Rp 1.145 atau 1.145 atau 1145)
-    const matches = bodyStr.match(/(?:Rp\.?\s*|sebesar\s*|IDR\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{4,})/gi);
-    
-    let detectedAmount = 0;
-    if (matches) {
-      for (const m of matches) {
-        const clean = parseInt(m.replace(/[^0-9]/g, ""), 10);
-        if (clean >= 1000) {
-          detectedAmount = clean;
-          break;
-        }
+    // Ambil semua transaksi yang saat ini berstatus MENUNGGU_PEMBAYARAN
+    const { data: pendingTrxList } = await supabase
+      .from("transactions")
+      .select("*, products(*)")
+      .eq("status", "MENUNGGU_PEMBAYARAN");
+
+    if (!pendingTrxList || pendingTrxList.length === 0) {
+      console.log("Tidak ada transaksi pending.");
+      return res.status(200).json({ status: "no_pending_transactions" });
+    }
+
+    // Cocokkan nominal transaksi pending yang tercantum di dalam teks notifikasi
+    let matchedTrx = null;
+    for (const trx of pendingTrxList) {
+      const amountStr = String(trx.amount);
+      const dotFormatted = trx.amount.toLocaleString("id-ID"); // contoh: "1.041"
+
+      // Cek apakah angka nominal ada di dalam teks notifikasi
+      if (rawData.includes(amountStr) || rawData.includes(dotFormatted)) {
+        matchedTrx = trx;
+        break;
       }
     }
 
-    console.log("Nominal terbaca:", detectedAmount);
-
-    if (!detectedAmount) {
-      return res.status(200).json({ status: "ignored", reason: "Nominal tidak terbaca" });
+    if (matchedTrx) {
+      console.log("Transaksi cocok ditemukan: ID", matchedTrx.id, "dengan tagihan", matchedTrx.amount);
+      await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", matchedTrx.id);
+      await prosesPesananSelesai(matchedTrx);
+      return res.status(200).json({ status: "success", trx_id: matchedTrx.id });
     }
 
-    const { data: trx } = await supabase
-      .from("transactions")
-      .select("*, products(*)")
-      .eq("amount", detectedAmount)
-      .eq("status", "MENUNGGU_PEMBAYARAN")
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (trx) {
-      await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trx.id);
-      await prosesPesananSelesai(trx);
-      return res.status(200).json({ status: "success", trx_id: trx.id });
-    }
-
-    return res.status(200).json({ status: "not_found", amount: detectedAmount });
+    console.log("Tidak ada nominal pending yang cocok di teks payload.");
+    return res.status(200).json({ status: "amount_not_matched", raw: rawData });
   } catch (error: any) {
-    console.error("Error DANA Webhook:", error);
+    console.error("Error handler DANA:", error);
     return res.status(500).json({ error: error.message });
   }
 }
