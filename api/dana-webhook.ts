@@ -14,7 +14,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 async function prosesPesananSelesai(trx: any) {
   const jumlahBeli = Math.floor(trx.amount / trx.products.price) || 1;
 
-  // Produk Berkas Digital (Cookie Fresh / Cookie Bekas / FP)
   if (trx.product_id !== 1) {
     const { data: stockItems } = await supabase
       .from("product_stocks")
@@ -52,7 +51,7 @@ async function prosesPesananSelesai(trx: any) {
         "🎉 <b>PEMBAYARAN DITERIMA!</b>\n\n" +
         "Pesanan <b>#TRX-" +
         trx.id +
-        "</b> telah diverifikasi lunas secara otomatis via DANA.\n" +
+        "</b> telah diverifikasi lunas otomatis via DANA.\n" +
         "📦 Produk: <b>" +
         trx.products.name +
         " (" +
@@ -70,13 +69,11 @@ async function prosesPesananSelesai(trx: any) {
         trx.user_id,
         "🎉 <b>PEMBAYARAN DITERIMA!</b>\nPesanan <b>#TRX-" +
           trx.id +
-          "</b> telah lunas, namun stok otomatis sedang habis. Admin akan segera mengirimkannya secara manual.",
+          "</b> telah lunas, namun stok otomatis sedang habis. Admin akan segera mengirimkannya manual.",
         { parse_mode: "HTML" }
       );
     }
-  } 
-  // Produk Manual: Slot Tumbal (ID 1)
-  else {
+  } else {
     const sisaStokBaru = Math.max(0, trx.products.stock - jumlahBeli);
     await supabase.from("products").update({ stock: sisaStokBaru }).eq("id", trx.product_id);
 
@@ -89,7 +86,6 @@ async function prosesPesananSelesai(trx: any) {
     );
   }
 
-  // Notifikasi ke Telegram Admin
   try {
     await bot.api.sendMessage(
       adminId,
@@ -103,31 +99,36 @@ async function prosesPesananSelesai(trx: any) {
   } catch {}
 }
 
-// ==================== HANDLER TERIMA NOTIFIKASI DARI HP ====================
+// ==================== HANDLER WEBHOOK DANA ====================
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const rawData = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-    console.log("PAYLOAD LENGKAP DARI HP:", rawData);
+    // Ambil isi request baik dalam format objek, teks polos, atau string JSON
+    let rawData = "";
+    if (typeof req.body === "object") {
+      rawData = JSON.stringify(req.body);
+    } else {
+      rawData = String(req.body || "");
+    }
 
-    // Ambil daftar invoice yang statusnya MENUNGGU_PEMBAYARAN
+    console.log("NOTIFIKASI DARI HP DITERIMA:", rawData);
+
     const { data: pendingTrxList } = await supabase
       .from("transactions")
       .select("*, products(*)")
       .eq("status", "MENUNGGU_PEMBAYARAN");
 
     if (!pendingTrxList || pendingTrxList.length === 0) {
-      console.log("Tidak ada transaksi pending di database.");
+      console.log("Tidak ada transaksi pending.");
       return res.status(200).json({ status: "no_pending_transactions" });
     }
 
-    // Cocokkan nominal invoice dengan teks yang dikirim dari HP
     let matchedTrx = null;
     for (const trx of pendingTrxList) {
-      const amountStr = String(trx.amount); // contoh: "1005"
+      const amountStr = String(trx.amount);
       const dotFormatted = trx.amount.toLocaleString("id-ID"); // contoh: "1.005"
 
       if (rawData.includes(amountStr) || rawData.includes(dotFormatted)) {
@@ -137,16 +138,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (matchedTrx) {
-      console.log("Transaksi cocok ditemukan: ID", matchedTrx.id, "dengan tagihan Rp", matchedTrx.amount);
+      console.log("Transaksi cocok: ID", matchedTrx.id, "dengan total Rp", matchedTrx.amount);
       await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", matchedTrx.id);
       await prosesPesananSelesai(matchedTrx);
       return res.status(200).json({ status: "success", trx_id: matchedTrx.id });
     }
 
-    console.log("Tidak ada nominal pending yang cocok di teks payload.");
+    console.log("Nominal tidak ada yang cocok.");
     return res.status(200).json({ status: "amount_not_matched", raw: rawData });
   } catch (error: any) {
     console.error("Error handler DANA:", error);
-    return res.status(500).json({ error: error.message });
+    return res.status(200).json({ error: error.message });
   }
 }
