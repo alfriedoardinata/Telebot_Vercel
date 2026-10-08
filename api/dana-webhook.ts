@@ -10,11 +10,9 @@ const adminId = 1294259168;
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Fungsi Pengiriman Item Sukses
 async function prosesPesananSelesai(trx: any) {
   const jumlahBeli = Math.floor(trx.amount / trx.products.price) || 1;
 
-  // Produk Berkas Digital (ID 2, 3, 4)
   if (trx.product_id !== 1) {
     const { data: stockItems } = await supabase
       .from("product_stocks")
@@ -36,9 +34,9 @@ async function prosesPesananSelesai(trx: any) {
 
       const pesanPengiriman =
         "🎉 <b>PEMBAYARAN DITERIMA!</b>\n\n" +
-        "Pesanan <b>#TRX-" + trx.id + "</b> telah diverifikasi lunas secara otomatis.\n" +
+        "Pesanan <b>#TRX-" + trx.id + "</b> telah diverifikasi lunas otomatis via DANA.\n" +
         "📦 Produk: <b>" + trx.products.name + " (" + stockItems.length + " item)</b>\n\n" +
-        "✅ File <b>.txt</b> terlampir di bawah.";
+        "✅ Berkas produk terlampir di bawah:";
 
       await bot.api.sendDocument(
         trx.user_id,
@@ -47,7 +45,6 @@ async function prosesPesananSelesai(trx: any) {
       );
     }
   } else {
-    // Slot Tumbal (ID 1)
     const sisaStokBaru = Math.max(0, trx.products.stock - jumlahBeli);
     await supabase.from("products").update({ stock: sisaStokBaru }).eq("id", trx.product_id);
 
@@ -58,15 +55,14 @@ async function prosesPesananSelesai(trx: any) {
     );
   }
 
-  // Notifikasi ke Admin
   try {
     await bot.api.sendMessage(
       adminId,
-      "💰 <b>PEMBAYARAN DANA LUNAS!</b>\n\n" +
-      "🆔 <b>ID:</b> #TRX-" + trx.id + "\n" +
-      "👤 <b>Pembeli:</b> " + (trx.user_name || "User") + "\n" +
-      "📦 <b>Produk:</b> " + trx.products.name + "\n" +
-      "💵 <b>Nominal:</b> Rp " + trx.amount.toLocaleString("id-ID"),
+      "💰 <b>PEMBAYARAN DANA MASUK & LUNAS!</b>\n\n" +
+      "🆔 #TRX-" + trx.id + "\n" +
+      "👤 " + (trx.user_name || "User") + " (" + (trx.username || "-") + ")\n" +
+      "📦 " + trx.products.name + "\n" +
+      "💵 Rp " + trx.amount.toLocaleString("id-ID"),
       { parse_mode: "HTML" }
     );
   } catch {}
@@ -78,26 +74,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const payload = req.body;
-    // Mengambil teks notifikasi (beberapa app mengirim field 'content', 'text', 'body', atau 'message')
-    const rawText = JSON.stringify(payload);
-    console.log("Notifikasi masuk dari DANA:", rawText);
+    const bodyStr = JSON.stringify(req.body);
+    console.log("Raw Notif DANA:", bodyStr);
 
-    // Ambil angka nominal dari teks (contoh: "Rp 2.045" atau "2.045" atau "2045")
-    const match = rawText.match(/(?:Rp\s*|sebesar\s*|IDR\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{4,})/i);
+    // Ambil deretan angka nominal (Rp 1.145 atau 1.145 atau 1145)
+    const matches = bodyStr.match(/(?:Rp\.?\s*|sebesar\s*|IDR\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{4,})/gi);
     
-    if (!match) {
-      return res.status(200).json({ status: "ignored", reason: "Nominal tidak ditemukan" });
+    let detectedAmount = 0;
+    if (matches) {
+      for (const m of matches) {
+        const clean = parseInt(m.replace(/[^0-9]/g, ""), 10);
+        if (clean >= 1000) {
+          detectedAmount = clean;
+          break;
+        }
+      }
     }
 
-    const cleanAmount = parseInt(match[1].replace(/\./g, ""), 10);
-    console.log("Nominal terdeteksi:", cleanAmount);
+    console.log("Nominal terbaca:", detectedAmount);
 
-    // Cari transaksi pending di database yang cocok dengan nominal ini
+    if (!detectedAmount) {
+      return res.status(200).json({ status: "ignored", reason: "Nominal tidak terbaca" });
+    }
+
     const { data: trx } = await supabase
       .from("transactions")
       .select("*, products(*)")
-      .eq("amount", cleanAmount)
+      .eq("amount", detectedAmount)
       .eq("status", "MENUNGGU_PEMBAYARAN")
       .order("id", { ascending: false })
       .limit(1)
@@ -109,9 +112,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ status: "success", trx_id: trx.id });
     }
 
-    return res.status(200).json({ status: "no_matching_transaction" });
+    return res.status(200).json({ status: "not_found", amount: detectedAmount });
   } catch (error: any) {
-    console.error("Error webhook DANA:", error);
+    console.error("Error DANA Webhook:", error);
     return res.status(500).json({ error: error.message });
   }
 }
