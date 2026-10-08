@@ -1,12 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, webhookCallback } from "grammy";
 import { createClient } from "@supabase/supabase-js";
 
 const botToken = process.env.BOT_TOKEN || "";
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const qrisRawString = process.env.QRIS_RAW_STRING || "";
-const adminId = 1294259168;
 
 const bot = new Bot(botToken);
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -199,7 +198,6 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
     return ctx.reply("❌ Gagal membuat transaksi. Silakan coba kembali.");
   }
 
-  // QR code generated via URL publik berkecepatan tinggi tanpa dependensi local canvas
   const qrisStringFinal = buatQRISDinamis(qrisRawString, totalTagihan);
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&margin=10&data=${encodeURIComponent(qrisStringFinal)}`;
 
@@ -367,10 +365,16 @@ bot.callbackQuery("menu_admin", async (ctx) => {
   await ctx.editMessageText(teksAdmin, { reply_markup: keyboard, parse_mode: "HTML" });
 });
 
-// ==================== VERCEL HANDLER ====================
+// ==================== VERCEL HANDLER (SAFE INIT) ====================
+let isBotInitialized = false;
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "POST") {
     try {
+      if (!isBotInitialized) {
+        await bot.init();
+        isBotInitialized = true;
+      }
       await bot.handleUpdate(req.body);
       return res.status(200).json({ ok: true });
     } catch (err: any) {
