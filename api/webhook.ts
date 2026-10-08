@@ -58,7 +58,7 @@ function buatQRISDinamis(rawString: string, nominal: number): string {
 const pesanMenuUtama =
   "👋 <b>Selamat Datang di Toko Tumbal Bot!</b>\n" +
   "━━━━━━━━━━━━━━━━━━━━━━\n" +
-  "Layanan otomatis penyedia akun tumbal dan berkas digital dengan verifikasi instan QRIS DANA.\n\n" +
+  "Layanan otomatis penyedia yang kamu mau ada di sini.\n\n" +
   "⚡ <b>Keunggulan Sistem:</b>\n" +
   "• Pengiriman berkas instan otomatis 24/7\n" +
   "• Tanpa antre konfirmasi manual admin\n" +
