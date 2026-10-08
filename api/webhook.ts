@@ -411,12 +411,12 @@ bot.callbackQuery(/^beli_(\d+)_(\d+)$/, async (ctx) => {
   });
 });
 
-// ==================== HANDLER: CEK PEMBAYARAN OTOMATIS ====================
+// ==================== HANDLER: CEK PEMBAYARAN DANA ====================
 bot.callbackQuery(/^cek_bayar_(\d+)$/, async (ctx) => {
   const trxId = parseInt(ctx.match[1]);
 
   try {
-    await ctx.answerCallbackQuery({ text: "🔍 Memeriksa mutasi..." });
+    await ctx.answerCallbackQuery({ text: "🔍 Memeriksa status pembayaran..." });
   } catch {}
 
   const { data: trx } = await supabase
@@ -426,33 +426,28 @@ bot.callbackQuery(/^cek_bayar_(\d+)$/, async (ctx) => {
     .single();
 
   if (!trx) {
-    return ctx.reply("❌ Transaksi tidak ditemukan di database.");
+    return ctx.reply("❌ Transaksi tidak ditemukan.");
   }
 
   if (trx.status === "SELESAI") {
-    return ctx.reply("✅ Transaksi ini sudah diselesaikan sebelumnya.");
-  }
-
-  if (trx.status === "BATAL" || trx.status === "DITOLAK") {
-    return ctx.reply("⚠️ Pesanan ini sudah dibatalkan atau ditolak.");
-  }
-
-  const isPaid = await cekMutasiGojek(trx.amount);
-
-  if (isPaid) {
-    await supabase.from("transactions").update({ status: "SELESAI" }).eq("id", trx.id);
     try {
       await ctx.deleteMessage();
     } catch {}
-    await prosesPesananSelesai(trx, ctx.api);
-  } else {
-    await ctx.reply(
-      "⚠️ <b>Pembayaran Belum Terdeteksi</b>\n\n" +
-      "Tagihan: <b>Rp " + trx.amount.toLocaleString("id-ID") + "</b>\n\n" +
-      "Sistem belum mendeteksi dana masuk. Jika baru saja transfer, mohon tunggu 15-30 detik lalu tekan kembali tombol <b>🔄 Cek Pembayaran</b>.",
-      { parse_mode: "HTML" }
-    );
+    return ctx.reply("✅ <b>Pembayaran Anda sudah lunas dan produk telah dikirimkan!</b>", { parse_mode: "HTML" });
   }
+
+  if (trx.status === "BATAL" || trx.status === "DITOLAK") {
+    return ctx.reply("⚠️ Pesanan ini sudah dibatalkan.");
+  }
+
+  // Jika belum lunas
+  await ctx.reply(
+    "⏳ <b>Menunggu Pembayaran DANA</b>\n\n" +
+    "Tagihan: <b>Rp " + trx.amount.toLocaleString("id-ID") + "</b>\n\n" +
+    "Sistem mendeteksi pembayaran secara <b>otomatis dalam 5-15 detik</b> setelah transfer berhasil.\n" +
+    "Pastikan Anda mentransfer sesuai nominal persis ke rekening/QRIS DANA di atas.",
+    { parse_mode: "HTML" }
+  );
 });
 
 // Handler Batal Pesanan
